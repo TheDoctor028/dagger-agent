@@ -9,17 +9,19 @@ type Agent struct {
 	// WorkDir is the working directory for the agent
 	WorkDir *dagger.Directory
 
-	// +private
+	// BseEnv is the base environment for the agent
 	BaseEnv *dagger.Env
 
+	// GitWorkDir is the git repository for the agent
 	// +private
 	GitWorkDir *dagger.GitRepository
 
+	// Tasks is the tasks for the agent
 	// +private
 	Tasks string
 
-	// base the LLM agent that handles the job.
-	base *dagger.LLM
+	// Base the LLM agent that handles the job.
+	Base *dagger.LLM
 }
 
 func New(
@@ -33,7 +35,7 @@ func New(
 		WorkDir:    workDir,
 		BaseEnv:    dag.Env().WithMainModule(dag.Toolbox().AsModule()),
 		GitWorkDir: nil,
-		base:       nil,
+		Base:       nil,
 	}
 }
 
@@ -43,7 +45,7 @@ func (agent *Agent) Task(task string) *Agent {
 }
 
 func (agent *Agent) Work(ctx context.Context) (string, error) {
-	env := agent.base.WithPrompt(agent.Tasks).Loop().Env()
+	env := agent.Base.WithPrompt(agent.Tasks).Loop().Env()
 	agent.BaseEnv = env // Update the env to the new one
 	res, err := env.Output("result").AsString(ctx)
 	_, err = agent.WorkDir.Sync(ctx)
@@ -58,22 +60,6 @@ func (agent *Agent) Agens() *dagger.LLM {
 
 // WithModel Swap out the LLM model
 func (agent *Agent) WithModel(model string) *Agent {
-	agent.base.WithModel(model)
+	agent.Base.WithModel(model)
 	return agent
-}
-
-/*
-ReadFiles Reads a file from the project directory.
-
-HOW TO USE THIS TOOL:
-  - Always use relative paths from the workspace root
-  - Reads the first 2000 lines by default
-  - Each line is prefixed with a line number followed by an arrow (→).
-    Everything that follows the arrow is the literal content of the line.
-  - You can specify an offset and limit to read line regions of a large file
-  - If the file contents are empty, you will receive a warning.
-  - If multiple files are interesting, you can read them all at once using multiple tool calls.
-*/
-func (agent Agent) ReadFiles() []string {
-	return nil
 }
