@@ -29,13 +29,14 @@ func New(
 	// +defaultPath="/"
 	workDir *dagger.Directory,
 ) *Agent {
-	// gitWorkDir := workDir.AsGit()
+	env := dag.Env().WithModule(dag.Toolbox().AsModule())
 
 	return &Agent{
-		WorkDir:    workDir,
-		BaseEnv:    dag.Env().WithMainModule(dag.Toolbox().AsModule()),
+		WorkDir: workDir,
+		// FIXME: Using deprecated function due thw WithMainModule is not working as expected
+		BaseEnv:    env,
 		GitWorkDir: nil,
-		Base:       nil,
+		Base:       dag.LLM().WithEnv(env),
 	}
 }
 
@@ -54,7 +55,6 @@ func (agent *Agent) Work(ctx context.Context) (string, error) {
 }
 
 func (agent *Agent) Agens() *dagger.LLM {
-	// FIXME: Using deprecated function due thw WithMainModule is not working as expected
 	return dag.LLM().WithEnv(agent.BaseEnv)
 }
 
