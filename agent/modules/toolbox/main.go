@@ -38,62 +38,8 @@ func New(
 	}
 }
 
-// A CLI friendly entrypoint for starting a coding agent developing in a workdir.
-func (d *Toolbox) Dev(
-	ctx context.Context,
-	source *dagger.Directory,
-	// +optional
-	module *dagger.Module,
-) (*dagger.LLM, error) {
-	env := dag.Env().WithWorkspace(source)
-	if module != nil {
-		env = env.WithModule(module)
-	}
-	return d.Agent(ctx, dag.LLM().WithEnv(env))
-}
-
-// Returns a Toolbox coding agent
-func (d *Toolbox) Agent(ctx context.Context, base *dagger.LLM) (*dagger.LLM, error) {
-	provider, err := base.Provider(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	promptsDir := dag.CurrentModule().Source().Directory("prompts/system/")
-	entries, err := promptsDir.Entries(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var systemPrompt string
-	providerFile := fmt.Sprintf("%s.txt", provider)
-
-	found := slices.Contains(entries, providerFile)
-
-	if found {
-		systemPrompt, err = dag.CurrentModule().Source().File(fmt.Sprintf("prompts/system/%s", providerFile)).Contents(ctx)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		systemPrompt, err = dag.CurrentModule().Source().File("prompts/system/doug.txt").Contents(ctx)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	reminderPrompt, err := d.reminderPrompt(ctx, base.Env().Workspace())
-	if err != nil {
-		return nil, err
-	}
-
-	return base.
-		WithEnv(
-			base.Env().
-				WithCurrentModule().
-				WithStringInput("TODOs", "", "Your TODO list")).
-		WithSystemPrompt(systemPrompt).
-		WithSystemPrompt(reminderPrompt), nil
+func (toolbox *Toolbox) AsModule() *dagger.Module {
+	return dag.CurrentModule().Source().AsModule()
 }
 
 /*
@@ -108,7 +54,7 @@ HOW TO USE THIS TOOL:
   - If the file contents are empty, you will receive a warning.
   - If multiple files are interesting, you can read them all at once using multiple tool calls.
 */
-func (d *Toolbox) ReadFile(
+func (toolbox *Toolbox) ReadFile(
 	ctx context.Context,
 	// Relative path within the workspace
 	filePath string,
@@ -117,7 +63,7 @@ func (d *Toolbox) ReadFile(
 	// Limit the number of lines read
 	limit *int,
 ) (string, error) {
-	filePath = d.normalizePath(filePath)
+	filePath = toolbox.normalizePath(filePath)
 
 	if limit == nil {
 		defaultLimit := 2000
@@ -131,7 +77,7 @@ func (d *Toolbox) ReadFile(
 		opts.OffsetLines = *offset
 	}
 
-	contents, err := d.Source.File(filePath).Contents(ctx, opts)
+	contents, err := toolbox.Source.File(filePath).Contents(ctx, opts)
 	if err != nil {
 		return "", err
 	}
@@ -205,7 +151,7 @@ When making edits:
 
 Remember: when making multiple file edits in a row to the same file, you should prefer to send all edits in a single message with multiple calls to this tool, rather than multiple messages with a single call each.
 */
-func (d *Toolbox) EditFile(
+func (toolbox *Toolbox) EditFile(
 	ctx context.Context,
 	// Relative path within the workspace
 	filePath string,
@@ -216,14 +162,14 @@ func (d *Toolbox) EditFile(
 	// Replace all occurrences
 	replaceAll *bool,
 ) (*dagger.Changeset, error) {
-	filePath = d.normalizePath(filePath)
+	filePath = toolbox.normalizePath(filePath)
 
 	if replaceAll == nil {
 		defaultReplaceAll := false
 		replaceAll = &defaultReplaceAll
 	}
 
-	before := d.Source.File(filePath)
+	before := toolbox.Source.File(filePath)
 
 	after := before.WithReplaced(oldString, newString, dagger.FileWithReplacedOpts{
 		All: *replaceAll,
@@ -249,7 +195,7 @@ func (d *Toolbox) EditFile(
 		return nil, err
 	}
 
-	return d.Source.WithFile(filePath, after).Changes(d.Source), nil
+	return toolbox.Source.WithFile(filePath, after).Changes(toolbox.Source), nil
 }
 
 // taken from chroma's TTY formatter
@@ -326,14 +272,14 @@ TIPS:
 - Use the BasicShell tool to verify the correct location when creating new files
 - Combine with Glob and Grep tools to find and modify multiple files
 */
-func (d *Toolbox) Write(
+func (toolbox *Toolbox) Write(
 	// Relative path within the workspace
 	filePath string,
 	// Complete file content to write
 	contents string,
 ) *dagger.Changeset {
-	filePath = d.normalizePath(filePath)
-	return d.Source.WithNewFile(filePath, contents).Changes(d.Source)
+	filePath = toolbox.normalizePath(filePath)
+	return toolbox.Source.WithNewFile(filePath, contents).Changes(toolbox.Source)
 }
 
 // Fast file pattern matching tool that finds files by name and pattern, returning matching paths sorted by modification time (newest first).
@@ -371,12 +317,12 @@ func (d *Toolbox) Write(
 // - For the most useful results, combine with the Grep tool: first find files with Glob, then search their contents with Grep
 // - When doing iterative exploration that may require multiple rounds of searching, consider using the Task tool instead
 // - Always check if results are truncated and refine your search pattern if needed
-func (d *Toolbox) Glob(
+func (toolbox *Toolbox) Glob(
 	ctx context.Context,
 	// Relative glob pattern to find within the workspace
 	pattern string,
 ) error {
-	result, err := d.Source.Glob(ctx, pattern)
+	result, err := toolbox.Source.Glob(ctx, pattern)
 	if err != nil {
 		return err
 	}
@@ -453,7 +399,7 @@ TIPS:
 - Always check if results are truncated and refine your search pattern if needed, or use ReadLogs to filter the result
 - Use literal_text=true when searching for exact text containing special characters like dots, parentheses, etc.
 */
-func (d *Toolbox) Grep(
+func (toolbox *Toolbox) Grep(
 	ctx context.Context,
 	// Regular expression pattern to grep for
 	pattern string,
@@ -473,7 +419,7 @@ func (d *Toolbox) Grep(
 	limit *int,
 ) (string, error) {
 	for i, filePath := range paths {
-		paths[i] = d.normalizePath(filePath)
+		paths[i] = toolbox.normalizePath(filePath)
 	}
 
 	opts := dagger.DirectorySearchOpts{}
@@ -503,12 +449,12 @@ func (d *Toolbox) Grep(
 		opts.Limit = 1000
 	}
 
-	matches, err := d.Source.Search(ctx, pattern, opts)
+	matches, err := toolbox.Source.Search(ctx, pattern, opts)
 	if err != nil {
 		return "", err
 	}
 
-	return fmt.Sprintf("%d matches found", len(matches)), nil
+	return fmt.Sprintf("%toolbox matches found", len(matches)), nil
 }
 
 /*
@@ -528,7 +474,7 @@ USAGE NOTES:
   - The agent's outputs should generally be trusted
   - IMPORTANT: The agent runs in a copy-on-write sandboxed environment. Any writes made by the agent will not be visible to the user, but will be available to the agent's next invocation.
 */
-func (d *Toolbox) Task(
+func (toolbox *Toolbox) Task(
 	ctx context.Context,
 	// A brief description of the task to show to the user
 	description string,
@@ -540,7 +486,7 @@ func (d *Toolbox) Task(
 		return "", err
 	}
 
-	reminderPrompt, err := d.reminderPrompt(ctx, d.Source)
+	reminderPrompt, err := toolbox.reminderPrompt(ctx, toolbox.Source)
 	if err != nil {
 		return "", err
 	}
@@ -580,7 +526,7 @@ HOW TO USE:
     completed
   - To print the current TODO list, call this function with no arguments
 */
-func (d *Toolbox) TodoWrite(ctx context.Context, pending []string, inProgress []string, completed []string) (*dagger.Env, error) {
+func (toolbox *Toolbox) TodoWrite(ctx context.Context, pending []string, inProgress []string, completed []string) (*dagger.Env, error) {
 	if pending == nil {
 		pending = []string{}
 	}
@@ -651,7 +597,7 @@ func (d *Toolbox) TodoWrite(ctx context.Context, pending []string, inProgress []
 	return dag.CurrentEnv().WithStringInput("TODOs", strings.Join(encodedTodos, "\n"), "Your TODO list"), nil
 }
 
-func (d *Toolbox) reminderPrompt(ctx context.Context, source *dagger.Directory) (string, error) {
+func (toolbox *Toolbox) reminderPrompt(ctx context.Context, source *dagger.Directory) (string, error) {
 	segments := []string{
 		`
 # System Reminder
@@ -705,6 +651,6 @@ found:
 //
 // but, even so, Toolbox works with relative paths, so we'll just clunkily strip
 // the prefix when it comes up.
-func (doug *Toolbox) normalizePath(filePath string) string {
-	return strings.TrimPrefix(filePath, doug.WorkspacePath)
+func (toolbox *Toolbox) normalizePath(filePath string) string {
+	return strings.TrimPrefix(filePath, toolbox.WorkspacePath)
 }

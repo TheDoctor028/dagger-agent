@@ -10,7 +10,7 @@ type Agent struct {
 	WorkDir *dagger.Directory
 
 	// +private
-	Env *dagger.Env
+	BaseEnv *dagger.Env
 
 	// +private
 	GitWorkDir *dagger.GitRepository
@@ -18,11 +18,8 @@ type Agent struct {
 	// +private
 	Tasks string
 
-	// alm the LLM agent that handles the job.
-	alm *dagger.LLM
-
-	// +private
-	Doug *dagger.Doug
+	// base the LLM agent that handles the job.
+	base *dagger.LLM
 }
 
 func New(
@@ -34,9 +31,9 @@ func New(
 
 	return &Agent{
 		WorkDir:    workDir,
-		Env:        nil,
+		BaseEnv:    dag.Env().WithMainModule(dag.Toolbox().AsModule()),
 		GitWorkDir: nil,
-		alm:        nil,
+		base:       nil,
 	}
 }
 
@@ -46,8 +43,8 @@ func (agent *Agent) Task(task string) *Agent {
 }
 
 func (agent *Agent) Work(ctx context.Context) (string, error) {
-	env := agent.alm.WithPrompt(agent.Tasks).Loop().Env()
-	agent.Env = env // Update the env to the new one
+	env := agent.base.WithPrompt(agent.Tasks).Loop().Env()
+	agent.BaseEnv = env // Update the env to the new one
 	res, err := env.Output("result").AsString(ctx)
 	_, err = agent.WorkDir.Sync(ctx)
 
@@ -56,14 +53,12 @@ func (agent *Agent) Work(ctx context.Context) (string, error) {
 
 func (agent *Agent) Agens() *dagger.LLM {
 	// FIXME: Using deprecated function due thw WithMainModule is not working as expected
-	return dag.LLM().WithEnv(dag.Env().WithModule(
-		dag.Toolbox().AsModule(),
-	))
+	return dag.LLM().WithEnv(agent.BaseEnv)
 }
 
 // WithModel Swap out the LLM model
 func (agent *Agent) WithModel(model string) *Agent {
-	agent.alm.WithModel(model)
+	agent.base.WithModel(model)
 	return agent
 }
 
