@@ -1,5 +1,3 @@
-// Simple and common tools used by the every agent
-
 package main
 
 import (
@@ -43,6 +41,7 @@ func (toolbox *Toolbox) AsModule() *dagger.Module {
 }
 
 /*
+ReadFile
 Reads a file from the project directory.
 
 HOW TO USE THIS TOOL:
@@ -103,6 +102,7 @@ func (toolbox *Toolbox) ReadFile(
 }
 
 /*
+EditFile
 Edits files by replacing text, creating new files, or deleting content. For moving or renaming files, use the BasicShell tool with the 'mv' command instead. For larger file edits, use the Write tool to overwrite files.
 
 # Before using this tool, use the ReadFile tool to understand the file's contents and context
@@ -282,6 +282,7 @@ func (toolbox *Toolbox) Write(
 	return toolbox.Source.WithNewFile(filePath, contents).Changes(toolbox.Source)
 }
 
+// Glob
 // Fast file pattern matching tool that finds files by name and pattern, returning matching paths sorted by modification time (newest first).
 //
 // WHEN TO USE THIS TOOL:
@@ -355,6 +356,7 @@ func (toolbox *Toolbox) Glob(
 }
 
 /*
+Grep
 Fast content search tool that finds files containing specific text or patterns, returning matching file paths sorted by modification time (newest first).
 
 WHEN TO USE THIS TOOL:
@@ -458,6 +460,7 @@ func (toolbox *Toolbox) Grep(
 }
 
 /*
+Task
 Launch a new agent that has access to the same tools and environment.
 
 When you are searching for a keyword or file and are not confident that you will find the right match on the first try, use the Task tool to perform the search for ou.
@@ -502,6 +505,7 @@ func (toolbox *Toolbox) Task(
 }
 
 /*
+TodoWrite
 Keep track of your TODO list
 
 WHEN TO USE THIS TOOL:

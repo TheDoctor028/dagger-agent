@@ -29,11 +29,11 @@ func New(
 	// +defaultPath="/"
 	workDir *dagger.Directory,
 ) *Agent {
+	// FIXME: Using deprecated function due thw WithMainModule is not working as expected
 	env := dag.Env().WithModule(dag.Toolbox().AsModule())
 
 	return &Agent{
-		WorkDir: workDir,
-		// FIXME: Using deprecated function due thw WithMainModule is not working as expected
+		WorkDir:    workDir,
 		BaseEnv:    env,
 		GitWorkDir: nil,
 		Base:       dag.LLM().WithEnv(env),
