@@ -1,6 +1,7 @@
-import {dag, Container, Directory, object, func, CacheVolume, Service, Secret} from "@dagger.io/dagger"
+import {CacheVolume, dag, func, object, Service} from "@dagger.io/dagger"
 import Typesense from "typesense/src/Typesense";
 import Client from "typesense/src/Typesense/Client";
+import {markDownDocsSchema, schemas} from "./schemas";
 
 const typeSenseVersion = "30.1";
 
@@ -14,15 +15,13 @@ export class Knowlagebase {
 
     svc: Service
 
-    _client!: Client
-
     constructor() {
         this.svc = this.typesenseSVC();
         this.svc.start().then()
     }
 
     dataVolume(): CacheVolume {
-    return dag.cacheVolume("knowlagebase-data")
+        return dag.cacheVolume("knowlagebase-data")
     }
 
     /**
@@ -55,7 +54,6 @@ export class Knowlagebase {
         withHostname("typesense")
     }
 
-
     /**
      * Performs a health check operation by starting the required service and retrieving the health status from the client.
      *
@@ -67,17 +65,43 @@ export class Knowlagebase {
         return (await (await this.client()).health.retrieve()).ok ? "ok" : "not ok"
     }
 
-    async client(): Promise<Client> {
-        if (this._client) return this._client;
+    @func()
+    async test(): Promise<string> {
+        const client = await this.client();
 
+        const collections = (await client.collections().retrieve()).map(coll => coll.name)
+        return collections.includes(markDownDocsSchema.name) ? "exists" : "not exists"
+    }
+
+    /**
+     * Initializes the knowledge base by setting up the necessary collections.
+     * Ensures that all schemas defined in the system are created in the database
+     * if they do not already exist.
+     *
+     * @return {Promise<Knowlagebase>}
+     */
+    @func()
+    async init(): Promise<Knowlagebase> {
+       const client = await this.client();
+       const collections = await this.collections();
+
+        for (const schema of schemas) if (!collections.includes(schema.name))
+                await client.collections().create(schema);
+
+        return this;
+    }
+
+    async client(): Promise<Client> {
         await this.svc.start();
-        const client = new Typesense.Client({
+        return new Typesense.Client({
             nodes: [{host: await this.svc.hostname(), port: 8108, protocol: "http"}],
             apiKey: "secret",
-            connectionTimeoutSeconds: 30, // 30-second timeout for all requests
-        });
-        this._client = client;
+            connectionTimeoutSeconds: 30,
+        })
+    }
 
-        return client
+    async collections(): Promise<string[]> {
+        const client = await this.client();
+        return (await client.collections().retrieve()).map(coll => coll.name)
     }
 }
