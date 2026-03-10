@@ -24,6 +24,9 @@ type Agent struct {
 
 	// Base the LLM agent that handles the job.
 	Base *dagger.LLM
+
+	// Project
+	Project *dagger.Project
 }
 
 func New(
@@ -32,7 +35,7 @@ func New(
 	workDir *dagger.Directory,
 ) *Agent {
 	// FIXME: Using deprecated function due thw WithMainModule is not working as expected
-	env := dag.Env().WithModule(dag.Toolbox().AsModule())
+	env := dag.Env().WithModule(dag.Toolbox().AsModule()).WithWorkspace(workDir)
 
 	return &Agent{
 		WorkDir:    workDir,
@@ -58,6 +61,6 @@ func (agent *Agent) Work(ctx context.Context) (string, error) {
 
 // WithModel Swap out the LLM model
 func (agent *Agent) WithModel(model string) *Agent {
-	agent.Base.WithModel(model)
+	agent.Base = agent.Base.WithModel(model)
 	return agent
 }
