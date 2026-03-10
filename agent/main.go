@@ -5,6 +5,8 @@ import (
 	"dagger/agent/internal/dagger"
 )
 
+// Agent
+// The main agent definition
 type Agent struct {
 	// WorkDir is the working directory for the agent
 	WorkDir *dagger.Directory
@@ -52,10 +54,6 @@ func (agent *Agent) Work(ctx context.Context) (string, error) {
 	_, err = agent.WorkDir.Sync(ctx)
 
 	return res, err
-}
-
-func (agent *Agent) Agens() *dagger.LLM {
-	return dag.LLM().WithEnv(agent.BaseEnv)
 }
 
 // WithModel Swap out the LLM model
