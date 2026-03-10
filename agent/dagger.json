@@ -11,6 +11,10 @@
       "pin": "edb98345c16e14ac7529fd103c4ce3f8dcab54f5"
     },
     {
+      "name": "project",
+      "source": "modules/project"
+    },
+    {
       "name": "toolbox",
       "source": "modules/toolbox"
     }
