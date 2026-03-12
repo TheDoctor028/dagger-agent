@@ -14,6 +14,7 @@ import {schemas} from "./schemas";
 import { dag } from '../sdk';
 import { chunkMarkdown, parseMarkdown } from "./markdown";
 import { defineTags } from "./tags";
+import { defineCategory } from "./categories";
 import { createHash } from "node:crypto";
 import {
     outKnowledgeBaseFunctions,
@@ -231,6 +232,7 @@ export class Knowlagebase {
         const contents = await md.contents();
         const parsed = parseMarkdown(contents);
         const tags = await defineTags(parsed);
+        const category = await defineCategory(parsed);
         const chunks = chunkMarkdown(parsed);
 
         const docPath = documentPath ?? path;
@@ -287,11 +289,8 @@ export class Knowlagebase {
                         || path,
                     section_heading: heading ?? "",
                     content: chunk.content,
-                    category:
-                        parsed.frontMatter.category
-                        ?? "uncategorized",
-                    subcategory:
-                        parsed.frontMatter.subcategory,
+                    category: category.category,
+                    subcategory: category.subCategory,
                     tags,
                     slug,
                     weight:
@@ -315,6 +314,21 @@ export class Knowlagebase {
         const contents = await md.contents();
         const parsed   = parseMarkdown(contents);
         return defineTags(parsed);
+    }
+
+    /**
+     * Uses an LLM agent to determine the best category for the
+     * given markdown file. Parses the file, feeds its content
+     * and metadata to the agent, and returns a single lowercase
+     * category string.
+     */
+    @func()
+    async extractCategory(md: File): Promise<string[]> {
+        const contents = await md.contents();
+        const parsed   = parseMarkdown(contents);
+        const res = await defineCategory(parsed);
+
+        return [res.category, (res.subCategory || "none")];
     }
 
     /**
@@ -392,7 +406,7 @@ export class Knowlagebase {
             .search({
                 q: "*",
                 per_page: 250,
-                exclude_fields: "embedding",
+                exclude_fields: "embedding, content",
             });
         return JSON.stringify(results.hits ?? [], null, 2);
     }
@@ -428,6 +442,7 @@ export class Knowlagebase {
                 "snapshot",
                 "typesenseSVC",
                 "extractTags",
+                "extractCategory",
                 "collections",
                 "init",
                 "healthCheck",
