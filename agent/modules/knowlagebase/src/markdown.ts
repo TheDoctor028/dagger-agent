@@ -10,7 +10,7 @@ export interface MarkdownFrontMatter {
     category:           string;
     subcategory?:       string;
     slug:               string;
-    tags?:              string[];
+    tags:               string[];
     confluence_page_id?: string;
     weight:             number;
 }
