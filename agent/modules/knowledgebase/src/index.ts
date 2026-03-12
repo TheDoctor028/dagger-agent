@@ -230,7 +230,13 @@ export class Knowledgebase {
         const client = await this.client();
         const path = await md.name();
         const contents = await md.contents();
-        const parsed = parseMarkdown(contents);
+        let parsed;
+        try {
+            parsed = parseMarkdown(contents);
+        } catch (e) {
+            console.error("Failed to parse markdown:", e);
+            return this;
+        }
         const tags = await defineTags(parsed);
         const category = await defineCategory(parsed);
         const chunks = chunkMarkdown(parsed);

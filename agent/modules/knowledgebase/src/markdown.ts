@@ -48,8 +48,23 @@ function extractHeadings(node: any): string[] {
     return [];
 }
 
+/** Strips the YAML frontmatter block (---...---) from raw file content. */
+function stripFrontmatterBlock(raw: string): string {
+    return raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+}
+
 export function parseMarkdown(fileContent: string): ParsedMarkdown {
-    const { data, content } = matter(fileContent);
+    let data, content;
+    try {
+        const res = matter(fileContent);
+        data = res.data;
+        content = res.content
+    } catch (e) {
+        console.error("Failed to parse markdown frontmatter (skipping):", e);
+        data = {};
+        // Strip the raw frontmatter block so remark never sees a `yaml` node
+        content = stripFrontmatterBlock(fileContent);
+    }
 
     const ast = unified()
         .use(remarkParse)
@@ -101,6 +116,8 @@ export function chunkMarkdown(
     }
 
     for (const child of root.children) {
+        // Skip frontmatter nodes — remark-stringify doesn't handle them
+        if (child.type === "yaml" || child.type === "toml") continue;
         if (child.type === "heading") {
             flush();
             const text = (child.children ?? [])
