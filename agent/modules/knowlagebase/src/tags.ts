@@ -30,11 +30,15 @@ export async function defineTags(parsed: ParsedMarkdown): Promise<string[]> {
         .loop()
         .lastReply();
 
-    return parseTagsFromReply(reply, parsed.frontMatter.tags);
+    return parseTagsFromReply(
+        reply,
+        parsed.frontMatter.tags ?? [],
+    );
 }
 
 function buildPrompt(parsed: ParsedMarkdown): string {
-    const existingTags = parsed.frontMatter.tags.join(", ") || "none";
+    const existingTags =
+        (parsed.frontMatter.tags ?? []).join(", ") || "none";
     const headings    = parsed.headings.join(", ")                  || "none";
 
     return [
