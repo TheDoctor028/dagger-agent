@@ -24,6 +24,7 @@ export async function defineTags(parsed: ParsedMarkdown): Promise<string[]> {
 
     const reply = await dag
         .llm()
+        .withModel("gpt-4.1")
         .withSystemPrompt(SYSTEM_PROMPT)
         .withPrompt(prompt)
         .loop()
