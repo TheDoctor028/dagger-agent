@@ -11,7 +11,7 @@ export const docChunksSchema: CollectionCreateSchema = {
         // --- Identity ---
         // Zero-based position of this chunk within the source document.
         // Calculated per document during parsing.
-        { name: "chunk_index",     type: "int32"     },
+        { name: "chunk_index",     type: "int32",     index: false },
 
         // --- Content ---
         // Top-level heading (`#`) of a Markdown document,
@@ -33,7 +33,7 @@ export const docChunksSchema: CollectionCreateSchema = {
         // --- Navigation ---
         // URL-safe slug identifying this chunk.
         // Format: `{source_type}-{source}-{document_path}-{chunk_index}`
-        { name: "slug",            type: "string"    },
+        { name: "slug",            type: "string",    index: false },
         // Importance score derived from documentation tree depth and
         // section heading level. Lower values = higher priority.
         { name: "weight",          type: "int32", facet: true},
