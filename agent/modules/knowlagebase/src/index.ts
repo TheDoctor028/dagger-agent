@@ -1,12 +1,23 @@
-import {CacheVolume, File, func, object, Service} from "@dagger.io/dagger"
+import {
+    argument,
+    CacheVolume,
+    Directory,
+    File,
+    func,
+    object,
+    Service,
+} from "@dagger.io/dagger"
 import {LLM} from "../sdk/client.gen"
 import Typesense from "typesense/src/Typesense";
 import Client from "typesense/src/Typesense/Client";
 import {schemas} from "./schemas";
 import { dag } from '../sdk';
-import { parseMarkdown } from "./markdown";
+import { chunkMarkdown, parseMarkdown } from "./markdown";
 import { defineTags } from "./tags";
-import { outKnowledgeBaseFunctions } from "./utils";
+import {
+    outKnowledgeBaseFunctions,
+    slugify,
+} from "./utils";
 const typeSenseVersion = "30.1";
 
 /**
@@ -69,43 +80,6 @@ export class Knowlagebase {
     async healthCheck(): Promise<string> {
         await this.svc.start()
         return (await (await this.client()).health.retrieve()).ok ? "ok" : "not ok"
-    }
-
-    @func()
-    async test(): Promise<Knowlagebase> {
-        const client = await this.client();
-
-        const doc = {
-            id:              "kubernetes-networking-overview-0",
-            document_id:     "kubernetes-networking-overview",
-            chunk_index:     0,
-            title:           "Kubernetes Networking Overview",
-            section_heading: "How Pod Networking Works",
-            content: [
-                "Every Pod in Kubernetes gets its own IP address.",
-                "Pods on the same Node communicate directly via a virtual bridge (cbr0).",
-                "Cross-Node traffic is routed through the CNI plugin (e.g. Calico, Flannel).",
-                "Services provide a stable virtual IP (ClusterIP) that load-balances across",
-                "healthy Pod endpoints using kube-proxy iptables rules.",
-            ].join(" "),
-            category:    "infrastructure",
-            subcategory: "networking",
-            tags:        ["kubernetes", "networking", "cni", "pod", "service"],
-            slug:        "docs/infrastructure/networking/kubernetes-networking-overview"
-                         + "#how-pod-networking-works",
-            weight:      50,
-            source:      "github",
-            source_type: "markdown",
-        };
-
-        await client
-            .collections("doc_chunks")
-            .documents()
-            .upsert(doc);
-
-        console.log("Indexed test doc:", JSON.stringify(doc, null, 2));
-        await this.snapshot();
-        return this;
     }
 
     /**
@@ -177,6 +151,113 @@ export class Knowlagebase {
             return `No results found for "${query}"`;
 
         return JSON.stringify(results.hits);
+    }
+
+    /**
+     * Indexes all markdown files from the given directory into
+     * the knowledge base. Each file is parsed, chunked by
+     * heading sections, tagged via an LLM, and upserted into
+     * the doc_chunks collection.
+     *
+     * If the directory is a git repository (.git present),
+     * source_type is set to "github" and source is the
+     * remote URL. Otherwise source_type is "local" and
+     * source is the file path.
+     */
+    @func()
+    async index(
+        /** Directory containing markdown files to index */
+        @argument({ defaultPath: "/" })
+        dir: Directory,
+    ): Promise<Knowlagebase> {
+        const isGit = await dir.exists(".git");
+        let sourceType = "local";
+        let repoUrl = "";
+        if (isGit) {
+            sourceType = "github";
+            try {
+                repoUrl = await dir.asGit().url();
+            } catch {
+                repoUrl =
+                    `git@local/${await dir.name()}`;
+            }
+        }
+
+        const files = await dir.filter({
+            gitignore: true,
+        }).glob("**/*.md");
+        
+        for (const path of files) {
+            const source = repoUrl
+                ? `${repoUrl}/${path}`
+                : path;
+            await this.indexFile(
+                dir.file(path),
+                source,
+                sourceType,
+            );
+        }
+
+        await this.snapshot();
+        return this;
+    }
+
+    /**
+     * Parses a single markdown file, chunks it by heading
+     * sections, generates tags via an LLM, and upserts
+     * every chunk into the doc_chunks collection.
+     */
+    @func()
+    async indexFile(
+        /** The markdown file to index */
+        md: File,
+        /** Path or URL pointing to the original file */
+        source: string,
+        /**
+         * Origin platform of the document
+         * (e.g. "github", "local")
+         */
+        sourceType: string = "local",
+    ): Promise<Knowlagebase> {
+        const client = await this.client();
+        const path = await md.name();
+        const contents = await md.contents();
+        const parsed = parseMarkdown(contents);
+        const tags = await defineTags(parsed);
+        const chunks = chunkMarkdown(parsed);
+
+        const docId = parsed.frontMatter.slug
+            ?? slugify(path.replace(/\.md$/, ""));
+
+        for (const chunk of chunks) {
+            const heading = chunk.sectionHeading;
+            await client
+                .collections("doc_chunks")
+                .documents()
+                .upsert({
+                    id: `${docId}-${chunk.chunkIndex}`,
+                    chunk_index: chunk.chunkIndex,
+                    title: parsed.frontMatter.title
+                        ?? path,
+                    section_heading: heading ?? "",
+                    content: chunk.content,
+                    category:
+                        parsed.frontMatter.category
+                        ?? "uncategorized",
+                    subcategory:
+                        parsed.frontMatter.subcategory,
+                    tags,
+                    slug: heading
+                        ? `${docId}#${slugify(heading)}`
+                        : docId,
+                    weight:
+                        parsed.frontMatter.weight ?? 50,
+                    source,
+                    source_type: sourceType,
+                });
+        }
+
+        return this;
     }
 
     /**
@@ -285,7 +366,9 @@ export class Knowlagebase {
                 "extractTags",
                 "collections",
                 "init",
-                "healthCheck"
+                "healthCheck",
+                "index",
+                "indexFile",
             ))
             .withSystemPrompt(
                 await dag.currentModule().source()
