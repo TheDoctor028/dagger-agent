@@ -1,10 +1,12 @@
 import {CacheVolume, File, func, object, Service} from "@dagger.io/dagger"
+import {LLM} from "../sdk/client.gen"
 import Typesense from "typesense/src/Typesense";
 import Client from "typesense/src/Typesense/Client";
 import {schemas} from "./schemas";
 import { dag } from '../sdk';
 import { parseMarkdown } from "./markdown";
 import { defineTags } from "./tags";
+import { outKnowledgeBaseFunctions } from "./utils";
 const typeSenseVersion = "30.1";
 
 /**
@@ -107,16 +109,48 @@ export class Knowlagebase {
     }
 
     /**
-     * Searches the doc_chunks collection
-     * Returns a human-readable summary of matching results.
+     * Search the knowledge base for documents matching a query.
+     *
+     * HOW TO USE THIS TOOL:
+     * - Use natural language queries to find relevant documentation
+     *   (e.g. "kubernetes networking", "helm chart deployment").
+     * - By default a full-text search across title, section_heading,
+     *   content and tags is performed.
+     * - Set semantic=true to switch to vector/embedding-based search
+     *   which finds conceptually similar documents even when exact
+     *   keywords do not match.
+     * - Increase limit to retrieve more results when exploring a
+     *   broad topic; decrease it for focused lookups.
+     *
+     * RETURN FORMAT:
+     * Returns a JSON array of hit objects. Each hit contains:
+     *   - document: the matched doc_chunk fields
+     *     (title, section_heading, content, category, subcategory,
+     *      tags, slug, weight, source, source_type)
+     *   - highlights (text search only): matching snippets
+     *   - text_match (text search only): relevance score
+     *   - vector_distance (semantic only): cosine distance
+     *
+     * Returns a plain message when no results are found.
      */
-    @func()
-    async testSearch(
-        // The search query string
+    @func({cache: "never"})
+    async search(
+        /**
+         * Natural language or keyword query to search for in the
+         * knowledge base (e.g. "pod networking", "CI/CD pipeline").
+         */
         query: string,
-        // Max number of results to return (default 5)
+        /**
+         * Maximum number of results to return.
+         * Use a small value (1-3) for precise lookups, larger
+         * (5-10) for exploratory searches.
+         */
         limit: number = 5,
-        // Use vector/semantic search via the embedding field instead of text search
+        /**
+         * When true, use vector/semantic search via the embedding
+         * field instead of keyword-based text search. Useful when
+         * the exact terminology is unknown.
+         */
         semantic: boolean = false,
     ): Promise<string> {
         const client = await this.client();
@@ -125,8 +159,6 @@ export class Knowlagebase {
             .collections("doc_chunks")
             .documents()
             .search(semantic ? {
-                // Pure semantic search: Typesense embeds `query` using ts/e5-small
-                // and finds the k nearest neighbours in the embedding field
                 q:            query,
                 query_by:     "embedding",
                 vector_query: `embedding:([], k:${limit})`,
@@ -136,17 +168,13 @@ export class Knowlagebase {
                 q:            query,
                 query_by:     "title,section_heading,content,tags",
                 per_page:     limit,
-                highlight_full_fields: "title,section_heading,content",
+                highlight_full_fields:
+                    "title,section_heading,content",
                 exclude_fields: "embedding",
             });
 
         if (!results.hits?.length)
             return `No results found for "${query}"`;
-
-        const lines: string[] = [
-            `Found ${results.found} result(s) for "${query}" (showing ${results.hits.length}):`,
-            "",
-        ];
 
         return JSON.stringify(results.hits);
     }
@@ -222,5 +250,50 @@ export class Knowlagebase {
     async collections(): Promise<string[]> {
         const client = await this.client();
         return (await client.collections().retrieve()).map(coll => coll.name)
+    }
+
+    /**
+     * Start an interactive chat with the knowledge base curator.
+     * The curator is an LLM agent that can search through the
+     * indexed documentation on your behalf and provide summarised,
+     * context-aware answers.
+     *
+     * Pass your question or topic as the prompt and the curator
+     * will query the knowledge base, synthesise the results and
+     * reply in a conversational format.
+     */
+    @func()
+    async curator(
+        /**
+         * Optional question or topic to explore in the knowledge
+         * base (e.g. "How does pod networking work in Kubernetes?").
+         * When omitted the curator starts without an initial query.
+         */
+        prompt?: string,
+    ): Promise<LLM> {
+        const env = dag.env()
+            .withCurrentModule();
+
+        let llm = dag
+            .llm()
+            .withEnv(env)
+            .with(outKnowledgeBaseFunctions(
+                "curator",
+                "test",
+                "snapshot",
+                "typesenseSVC",
+                "extractTags",
+                "collections",
+                "init",
+                "healthCheck"
+            ))
+            .withSystemPrompt(
+                await dag.currentModule().source()
+                    .file("prompts/curator.md").contents()
+            );
+
+        if (prompt) llm = llm.withPrompt(prompt);
+
+        return llm;
     }
 }
