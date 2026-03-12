@@ -1,5 +1,6 @@
 import { dag } from "../sdk";
 import { ParsedMarkdown } from "./markdown";
+import { slugify } from "./utils";
 
 const SYSTEM_PROMPT = `
 You are a technical documentation tagging assistant.
@@ -59,11 +60,11 @@ function parseTagsFromReply(reply: string, fallback: string[]): string[] {
         const parsed   = JSON.parse(stripped);
 
         if (Array.isArray(parsed) && parsed.every((t) => typeof t === "string")) {
-            return parsed as string[];
+            return (parsed as string[]).map(slugify);
         }
     } catch {
         // fall through to fallback
     }
 
-    return fallback;
+    return fallback.map(slugify);
 }

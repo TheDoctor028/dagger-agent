@@ -14,6 +14,7 @@ import {schemas} from "./schemas";
 import { dag } from '../sdk';
 import { chunkMarkdown, parseMarkdown } from "./markdown";
 import { defineTags } from "./tags";
+import { createHash } from "node:crypto";
 import {
     outKnowledgeBaseFunctions,
     slugify,
@@ -195,6 +196,7 @@ export class Knowlagebase {
                 dir.file(path),
                 source,
                 sourceType,
+                path,
             );
         }
 
@@ -218,6 +220,11 @@ export class Knowlagebase {
          * (e.g. "github", "local")
          */
         sourceType: string = "local",
+        /**
+         * Relative path of the file within the source.
+         * Used for slug generation and weight derivation.
+         */
+        documentPath?: string,
     ): Promise<Knowlagebase> {
         const client = await this.client();
         const path = await md.name();
@@ -226,19 +233,58 @@ export class Knowlagebase {
         const tags = await defineTags(parsed);
         const chunks = chunkMarkdown(parsed);
 
-        const docId = parsed.frontMatter.slug
-            ?? slugify(path.replace(/\.md$/, ""));
+        const docPath = documentPath ?? path;
+
+        // Top-level heading (#) of the Markdown document
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const h1Node = parsed.ast.children?.find(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (n: any) => n.type === "heading"
+                && n.depth === 1,
+        );
+        const h1Title = h1Node?.children
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ?.filter((c: any) =>
+                c.type === "text"
+                || c.type === "inlineCode")
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .map((c: any) => c.value)
+            .join("");
+
+        // Importance score derived from documentation tree
+        // depth and section heading level.
+        // Lower values = higher priority.
+        const pathDepth = docPath
+            .split("/").filter(Boolean).length - 1;
 
         for (const chunk of chunks) {
             const heading = chunk.sectionHeading;
+            const sectionLevel = heading ? 1 : 0;
+            const derivedWeight = Math.min(
+                100,
+                10 + (pathDepth * 15)
+                    + (sectionLevel * 5),
+            );
+
+            const slug = [
+                slugify(sourceType),
+                slugify(docPath),
+                String(chunk.chunkIndex),
+            ].join("-");
+
+            const id = createHash("sha256")
+                .update(slug)
+                .digest("hex");
+
             await client
                 .collections("doc_chunks")
                 .documents()
                 .upsert({
-                    id: `${docId}-${chunk.chunkIndex}`,
+                    id,
                     chunk_index: chunk.chunkIndex,
-                    title: parsed.frontMatter.title
-                        ?? path,
+                    title: h1Title
+                        || parsed.frontMatter.title
+                        || path,
                     section_heading: heading ?? "",
                     content: chunk.content,
                     category:
@@ -247,11 +293,10 @@ export class Knowlagebase {
                     subcategory:
                         parsed.frontMatter.subcategory,
                     tags,
-                    slug: heading
-                        ? `${docId}#${slugify(heading)}`
-                        : docId,
+                    slug,
                     weight:
-                        parsed.frontMatter.weight ?? 50,
+                        parsed.frontMatter.weight
+                        ?? derivedWeight,
                     source,
                     source_type: sourceType,
                 });
