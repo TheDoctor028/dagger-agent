@@ -2,7 +2,14 @@
   "type": "module",
   "dependencies": {
     "@babel/runtime": "^7.28.6",
+    "gray-matter": "^4.0.3",
+    "remark": "^15.0.1",
+    "remark-frontmatter": "^5.0.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
     "typescript": "5.9.3",
-    "typesense": "^3.0.2"
+    "typesense": "^3.0.2",
+    "unified": "^11.0.5"
   }
 }

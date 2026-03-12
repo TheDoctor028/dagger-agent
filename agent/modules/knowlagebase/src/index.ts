@@ -1,7 +1,16 @@
-import {CacheVolume, dag, func, object, Service} from "@dagger.io/dagger"
+import {CacheVolume, File, func, object, Service} from "@dagger.io/dagger"
 import Typesense from "typesense/src/Typesense";
 import Client from "typesense/src/Typesense/Client";
-import {markDownDocsSchema, schemas} from "./schemas";
+import {schemas} from "./schemas";
+import { dag } from '../sdk';
+import { parseMarkdown } from "./markdown";
+import { defineTags } from "./tags";
+import {unified} from "unified";
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import remarkFrontmatter from "remark-frontmatter";
+//@ts-ignore
+import matter from 'gray-matter';
 
 const typeSenseVersion = "30.1";
 
@@ -17,7 +26,7 @@ export class Knowlagebase {
 
     constructor() {
         this.svc = this.typesenseSVC();
-        this.svc.start().then()
+        // this.svc.start().then()
     }
 
     dataVolume(): CacheVolume {
@@ -66,11 +75,30 @@ export class Knowlagebase {
     }
 
     @func()
-    async test(): Promise<string> {
-        const client = await this.client();
+    async test(
+        f: File
+    ): Promise<string> {
+        const contents = await f.contents();
+        const matteredContents = matter(contents);
 
-        const collections = (await client.collections().retrieve()).map(coll => coll.name)
-        return collections.includes(markDownDocsSchema.name) ? "exists" : "not exists"
+        const mdTree = unified().
+            use(remarkParse).
+            use(remarkFrontmatter).
+            use(remarkGfm).parse(matteredContents.content);
+
+        return JSON.stringify(mdTree);
+    }
+
+    /**
+     * Uses an LLM agent to derive tags for the given markdown file.
+     * Parses the file, feeds its content and metadata to the agent,
+     * and returns a JSON array of lowercase tag strings.
+     */
+    @func()
+    async tags(f: File): Promise<string[]> {
+        const contents = await f.contents();
+        const parsed   = parseMarkdown(contents);
+        return defineTags(parsed);
     }
 
     /**
