@@ -110,23 +110,34 @@ export class Knowlagebase {
      * Searches the doc_chunks collection
      * Returns a human-readable summary of matching results.
      */
-    @func({cache: "never"})
+    @func()
     async testSearch(
         // The search query string
         query: string,
         // Max number of results to return (default 5)
         limit: number = 5,
+        // Use vector/semantic search via the embedding field instead of text search
+        semantic: boolean = false,
     ): Promise<string> {
         const client = await this.client();
 
         const results = await client
             .collections("doc_chunks")
             .documents()
-            .search({
+            .search(semantic ? {
+                // Pure semantic search: Typesense embeds `query` using ts/e5-small
+                // and finds the k nearest neighbours in the embedding field
+                q:            query,
+                query_by:     "embedding",
+                vector_query: `embedding:([], k:${limit})`,
+                per_page:     limit,
+                exclude_fields: "embedding",
+            } : {
                 q:            query,
                 query_by:     "title,section_heading,content,tags",
                 per_page:     limit,
                 highlight_full_fields: "title,section_heading,content",
+                exclude_fields: "embedding",
             });
 
         if (!results.hits?.length)
@@ -183,8 +194,13 @@ export class Knowlagebase {
     }
 
     /**
-     * Forces a Raft snapshot
-     * Without this Typesense wipes /data/db on startup when the node IP changes.
+     * Forces a Raft snapshot to /data/state/snapshot so data survives container
+     * restarts. Without this, Typesense wipes /data/db when the node IP changes
+     * between Dagger runs.
+     * cache:"never" is required because Dagger deduplicates identical function
+     * calls within the same session — without it, only the first snapshot() in a
+     * chain (e.g. init → test) would actually execute; subsequent calls would
+     * return the cached result and skip the HTTP request entirely.
      */
     @func({cache: "never"})
     async snapshot(): Promise<void> {
@@ -202,7 +218,7 @@ export class Knowlagebase {
         })
     }
 
-    @func({cache: "never"})
+    @func()
     async collections(): Promise<string[]> {
         const client = await this.client();
         return (await client.collections().retrieve()).map(coll => coll.name)
