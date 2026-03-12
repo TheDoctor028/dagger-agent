@@ -25,7 +25,7 @@ export const docChunksSchema: CollectionCreateSchema = {
 
         // --- Navigation ---
         { name: "slug",            type: "string"    },
-        { name: "weight",          type: "int32"     },
+        { name: "weight",          type: "int32", facet: true},
 
         // --- Source tracing ---
         { name: "source",          type: "string",    facet: true },

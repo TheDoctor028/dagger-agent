@@ -5,13 +5,6 @@ import {schemas} from "./schemas";
 import { dag } from '../sdk';
 import { parseMarkdown } from "./markdown";
 import { defineTags } from "./tags";
-import {unified} from "unified";
-import remarkParse from "remark-parse";
-import remarkGfm from "remark-gfm";
-import remarkFrontmatter from "remark-frontmatter";
-//@ts-ignore
-import matter from 'gray-matter';
-
 const typeSenseVersion = "30.1";
 
 /**
@@ -51,6 +44,8 @@ export class Knowlagebase {
         withEnvVariable("TYPESENSE_DATA_DIR", "/data").
         withEnvVariable("TYPESENSE_ENABLE_CORS", "1").
         withEnvVariable("TYPESENSE_API_KEY", "secret").
+        // Take an automatic Raft snapshot every 30s so data survives IP changes
+        withEnvVariable("TYPESENSE_SNAPSHOT_INTERVAL_SECONDS", "30").
         withExposedPort(8108, {}).
         withDockerHealthcheck(["curl --fail http://localhost:8108/health"], {
             shell: true,
@@ -75,18 +70,74 @@ export class Knowlagebase {
     }
 
     @func()
-    async test(
-        f: File
+    async test(): Promise<Knowlagebase> {
+        const client = await this.client();
+
+        const doc = {
+            id:              "kubernetes-networking-overview-0",
+            document_id:     "kubernetes-networking-overview",
+            chunk_index:     0,
+            title:           "Kubernetes Networking Overview",
+            section_heading: "How Pod Networking Works",
+            content: [
+                "Every Pod in Kubernetes gets its own IP address.",
+                "Pods on the same Node communicate directly via a virtual bridge (cbr0).",
+                "Cross-Node traffic is routed through the CNI plugin (e.g. Calico, Flannel).",
+                "Services provide a stable virtual IP (ClusterIP) that load-balances across",
+                "healthy Pod endpoints using kube-proxy iptables rules.",
+            ].join(" "),
+            category:    "infrastructure",
+            subcategory: "networking",
+            tags:        ["kubernetes", "networking", "cni", "pod", "service"],
+            slug:        "docs/infrastructure/networking/kubernetes-networking-overview"
+                         + "#how-pod-networking-works",
+            weight:      50,
+            source:      "github",
+            source_type: "markdown",
+        };
+
+        await client
+            .collections("doc_chunks")
+            .documents()
+            .upsert(doc);
+
+        console.log("Indexed test doc:", JSON.stringify(doc, null, 2));
+        await this.snapshot();
+        return this;
+    }
+
+    /**
+     * Searches the doc_chunks collection
+     * Returns a human-readable summary of matching results.
+     */
+    @func({cache: "never"})
+    async testSearch(
+        // The search query string
+        query: string,
+        // Max number of results to return (default 5)
+        limit: number = 5,
     ): Promise<string> {
-        const contents = await f.contents();
-        const matteredContents = matter(contents);
+        const client = await this.client();
 
-        const mdTree = unified().
-            use(remarkParse).
-            use(remarkFrontmatter).
-            use(remarkGfm).parse(matteredContents.content);
+        const results = await client
+            .collections("doc_chunks")
+            .documents()
+            .search({
+                q:            query,
+                query_by:     "title,section_heading,content,tags",
+                per_page:     limit,
+                highlight_full_fields: "title,section_heading,content",
+            });
 
-        return JSON.stringify(mdTree);
+        if (!results.hits?.length)
+            return `No results found for "${query}"`;
+
+        const lines: string[] = [
+            `Found ${results.found} result(s) for "${query}" (showing ${results.hits.length}):`,
+            "",
+        ];
+
+        return JSON.stringify(results.hits);
     }
 
     /**
@@ -102,21 +153,44 @@ export class Knowlagebase {
     }
 
     /**
-     * Initializes the knowledge base by setting up the necessary collections.
-     * Ensures that all schemas defined in the system are created in the database
-     * if they do not already exist.
-     *
-     * @return {Promise<Knowlagebase>}
+     * Ensures all collections exist. When migrate is true, existing collections
+     * are dropped and recreated from the current schema (useful after schema changes).
+     * When false (default), only missing collections are created.
      */
     @func()
-    async init(): Promise<Knowlagebase> {
-       const client = await this.client();
-       const collections = await this.collections();
+    async init(
+        // Drop and recreate all collections from the current schema
+        migrate: boolean = false,
+    ): Promise<Knowlagebase> {
+        const client = await this.client();
 
-        for (const schema of schemas) if (!collections.includes(schema.name))
+        for (const schema of schemas) {
+            if (migrate) {
+                try { await client.collections(schema.name).delete(); } catch (_) {}
                 await client.collections().create(schema);
+            } else {
+                try {
+                    await client.collections().create(schema);
+                } catch (e: any) {
+                    // 409 means the collection already exists — that's fine
+                    if (!(e?.message ?? "").includes("already exists")) throw e;
+                }
+            }
+        }
 
+        await this.snapshot();
         return this;
+    }
+
+    /**
+     * Forces a Raft snapshot
+     * Without this Typesense wipes /data/db on startup when the node IP changes.
+     */
+    @func({cache: "never"})
+    async snapshot(): Promise<void> {
+        const client = await this.client();
+        await client.operations.perform("snapshot",
+            { "snapshot-path": "/data/state/snapshot" });
     }
 
     async client(): Promise<Client> {
