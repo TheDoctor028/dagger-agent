@@ -128,6 +128,7 @@ export class Knowlagebase {
         })
     }
 
+    @func({cache: "never"})
     async collections(): Promise<string[]> {
         const client = await this.client();
         return (await client.collections().retrieve()).map(coll => coll.name)
