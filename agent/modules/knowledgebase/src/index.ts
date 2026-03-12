@@ -444,7 +444,6 @@ export class Knowledgebase {
             .withEnv(env)
             .with(outKnowledgeBaseFunctions(
                 "curator",
-                "test",
                 "snapshot",
                 "typesenseSVC",
                 "extractTags",
