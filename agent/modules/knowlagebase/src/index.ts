@@ -330,7 +330,26 @@ export class Knowlagebase {
     @func()
     async collections(): Promise<string[]> {
         const client = await this.client();
-        return (await client.collections().retrieve()).map(coll => coll.name)
+        return (await client.collections().retrieve())
+            .map(coll => coll.name)
+    }
+
+    /**
+     * Returns all documents in the doc_chunks collection
+     * as a JSON string. Useful for debugging.
+     */
+    @func({cache: "never"})
+    async documents(): Promise<string> {
+        const client = await this.client();
+        const results = await client
+            .collections("doc_chunks")
+            .documents()
+            .search({
+                q: "*",
+                per_page: 250,
+                exclude_fields: "embedding",
+            });
+        return JSON.stringify(results.hits ?? [], null, 2);
     }
 
     /**
@@ -369,6 +388,7 @@ export class Knowlagebase {
                 "healthCheck",
                 "index",
                 "indexFile",
+                "documents",
             ))
             .withSystemPrompt(
                 await dag.currentModule().source()
