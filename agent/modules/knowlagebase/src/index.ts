@@ -45,7 +45,7 @@ export class Knowlagebase {
         withEnvVariable("TYPESENSE_ENABLE_CORS", "1").
         withEnvVariable("TYPESENSE_API_KEY", "secret").
         // Take an automatic Raft snapshot every 30s so data survives IP changes
-        withEnvVariable("TYPESENSE_SNAPSHOT_INTERVAL_SECONDS", "30").
+        withEnvVariable("TYPESENSE_SNAPSHOT_INTERVAL_SECONDS", "15").
         withExposedPort(8108, {}).
         withDockerHealthcheck(["curl --fail http://localhost:8108/health"], {
             shell: true,
