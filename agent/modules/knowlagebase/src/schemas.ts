@@ -23,9 +23,18 @@ export const docChunksSchema: CollectionCreateSchema = {
         { name: "content",         type: "string"    },
 
         // --- Classification ---
-        // Top-level category used to group and filter documents.
+        // Top-level category describing the document's primary domain.
+        // Derived by an LLM during indexing. Preferred values:
+        // infrastructure, networking, ci-cd, observability, security,
+        // documentation, tooling, development, database, messaging,
+        // storage, authentication, deployment, testing, configuration,
+        // automation. Falls back to "uncategorized".
         { name: "category",        type: "string",    facet: true },
-        // Optional secondary classification within a category.
+        // Optional secondary classification that narrows the category.
+        // Derived by an LLM during indexing. For example a document
+        // with category "infrastructure" might have subcategory
+        // "kubernetes" or "terraform". Left empty when no meaningful
+        // refinement exists.
         { name: "subcategory",     type: "string",    facet: true, optional: true },
         // Free-form labels for cross-cutting topics. Extracted by an LLM.
         { name: "tags",            type: "string[]",  facet: true },
