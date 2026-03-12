@@ -95,8 +95,8 @@ export class Knowlagebase {
      * and returns a JSON array of lowercase tag strings.
      */
     @func()
-    async tags(f: File): Promise<string[]> {
-        const contents = await f.contents();
+    async extractTags(md: File): Promise<string[]> {
+        const contents = await md.contents();
         const parsed   = parseMarkdown(contents);
         return defineTags(parsed);
     }
