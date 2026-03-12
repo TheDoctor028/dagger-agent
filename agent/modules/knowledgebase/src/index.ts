@@ -28,7 +28,7 @@ const typeSenseVersion = "30.1";
  * and interacting with a Typesense client.
  */
 @object()
-export class Knowlagebase {
+export class Knowledgebase {
 
     svc: Service
 
@@ -38,7 +38,7 @@ export class Knowlagebase {
     }
 
     dataVolume(): CacheVolume {
-        return dag.cacheVolume("knowlagebase-data")
+        return dag.cacheVolume("knowledgebase-data")
     }
 
     /**
@@ -171,7 +171,7 @@ export class Knowlagebase {
         /** Directory containing markdown files to index */
         @argument({ defaultPath: "/" })
         dir: Directory,
-    ): Promise<Knowlagebase> {
+    ): Promise<Knowledgebase> {
         const isGit = await dir.exists(".git");
         let sourceType = "local";
         let repoUrl = "";
@@ -226,7 +226,7 @@ export class Knowlagebase {
          * Used for slug generation and weight derivation.
          */
         documentPath?: string,
-    ): Promise<Knowlagebase> {
+    ): Promise<Knowledgebase> {
         const client = await this.client();
         const path = await md.name();
         const contents = await md.contents();
@@ -340,7 +340,7 @@ export class Knowlagebase {
     async init(
         // Drop and recreate all collections from the current schema
         migrate: boolean = false,
-    ): Promise<Knowlagebase> {
+    ): Promise<Knowledgebase> {
         const client = await this.client();
 
         for (const schema of schemas) {
