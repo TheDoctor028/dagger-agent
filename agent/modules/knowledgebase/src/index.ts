@@ -5,6 +5,7 @@ import {
     File,
     func,
     object,
+    Secret,
     Service,
 } from "@dagger.io/dagger"
 import {LLM} from "../sdk/client.gen"
@@ -21,6 +22,7 @@ import {
     slugify,
 } from "./utils";
 const typeSenseVersion = "30.1";
+const TYPESENSE_DEFAULT_API_KEY = "secret";
 
 /**
  * Represents a Knowledgebase system that manages a Typesense service for data indexing and retrieval.
@@ -31,10 +33,49 @@ const typeSenseVersion = "30.1";
 export class Knowledgebase {
 
     svc: Service
+    remoteAddress?: string
+    remoteApiKey?: Secret
+    remoteProtocol?: string
 
-    constructor() {
+    constructor(
+        /** Optional remote Typesense address
+         * (e.g. "ts.example.com:8108") */
+        remoteAddress?: string,
+        /** Optional API key secret for the remote */
+        remoteApiKey?: Secret,
+        /** Protocol to use for the remote
+         * (default: "http") */
+        remoteProtocol: string = "http",
+    ) {
         this.svc = this.typesenseSVC();
-        // this.svc.start().then()
+        if (remoteAddress || remoteApiKey) {
+            this.withRemote(
+                remoteAddress!,
+                remoteApiKey!,
+                remoteProtocol ?? "http",
+            );
+        }
+    }
+
+    /**
+     * Configures the knowledgebase to use a remote
+     * Typesense instance instead of the local
+     * Dagger-managed service.
+     */
+    @func()
+    withRemote(
+        /** Address of the remote Typesense instance
+         * (e.g. "ts.example.com:8108") */
+        address: string,
+        /** API key secret for the remote instance */
+        apiKey: Secret,
+        /** Protocol to use (default: "http") */
+        protocol: string = "http",
+    ): Knowledgebase {
+        this.remoteAddress = address;
+        this.remoteApiKey = apiKey;
+        this.remoteProtocol = protocol;
+        return this;
     }
 
     dataVolume(): CacheVolume {
@@ -58,7 +99,7 @@ export class Knowledgebase {
         withMountedCache("/data", this.dataVolume()).
         withEnvVariable("TYPESENSE_DATA_DIR", "/data").
         withEnvVariable("TYPESENSE_ENABLE_CORS", "1").
-        withEnvVariable("TYPESENSE_API_KEY", "secret").
+        withEnvVariable("TYPESENSE_API_KEY", TYPESENSE_DEFAULT_API_KEY).
         // Take an automatic Raft snapshot every 30s so data survives IP changes
         withEnvVariable("TYPESENSE_SNAPSHOT_INTERVAL_SECONDS", "15").
         withExposedPort(8108, {}).
@@ -384,12 +425,26 @@ export class Knowledgebase {
     }
 
     async client(): Promise<Client> {
-        await this.svc.start();
+        const isRemote =
+            this.remoteAddress && this.remoteApiKey;
+
+        if (!isRemote) await this.svc.start();
+
+        const [host, portStr] = isRemote
+            ? this.remoteAddress!.split(":")
+            : [await this.svc.hostname(), "8108"];
+
         return new Typesense.Client({
-            nodes: [{host: await this.svc.hostname(), port: 8108, protocol: "http"}],
-            apiKey: "secret",
+            nodes: [{
+                host,
+                port: parseInt(portStr, 10) || 8108,
+                protocol: isRemote
+                    ? (this.remoteProtocol ?? "http")
+                    : "http",
+            }],
+            apiKey: isRemote ? await this.remoteApiKey!.plaintext() : TYPESENSE_DEFAULT_API_KEY,
             connectionTimeoutSeconds: 30,
-        })
+        });
     }
 
     @func()
