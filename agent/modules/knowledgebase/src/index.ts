@@ -232,6 +232,25 @@ export class Knowledgebase {
     }
 
     /**
+     * Returns all markdown files from the given directory
+     * that should be indexed. Respects .gitignore when
+     * a .git directory is present.
+     *
+     * The returned File[] can be piped into bedrockIngest
+     * or any other consumer.
+     */
+    @func()
+    async filesToIndex(
+        /** Directory containing markdown files */
+        @argument({ defaultPath: "/" })
+        dir: Directory,
+    ): Promise<File[]> {
+        const filtered = dir.filter({ gitignore: true });
+        const paths = await filtered.glob("**/*.md");
+        return paths.map((p) => filtered.file(p));
+    }
+
+    /**
      * Indexes all markdown files from the given directory into
      * the knowledge base. Each file is parsed, chunked by
      * heading sections, tagged via an LLM, and upserted into
@@ -261,16 +280,15 @@ export class Knowledgebase {
             }
         }
 
-        const files = await dir.filter({
-            gitignore: true,
-        }).glob("**/*.md");
-        
-        for (const path of files) {
+        const files = await this.filesToIndex(dir);
+
+        for (const file of files) {
+            const path = await file.name();
             const source = repoUrl
                 ? `${repoUrl}/${path}`
                 : path;
             await this.indexFile(
-                dir.file(path),
+                file,
                 source,
                 sourceType,
                 path,
@@ -653,6 +671,7 @@ export class Knowledgebase {
                 "documents",
                 "bedrockIngest",
                 "withAwsCredentials",
+                "filesToIndex",
             ))
             .withSystemPrompt(
                 await dag.currentModule().source()
