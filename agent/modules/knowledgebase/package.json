@@ -1,6 +1,7 @@
 {
   "type": "module",
   "dependencies": {
+    "@aws-sdk/client-bedrock-agent": "^3.800.0",
     "@babel/runtime": "^7.28.6",
     "@types/node": "^25.4.0",
     "gray-matter": "^4.0.3",

@@ -21,6 +21,10 @@ import {
     outKnowledgeBaseFunctions,
     slugify,
 } from "./utils";
+import {
+    BedrockAgentClient,
+    IngestKnowledgeBaseDocumentsCommand,
+} from "@aws-sdk/client-bedrock-agent";
 const typeSenseVersion = "30.1";
 const TYPESENSE_DEFAULT_API_KEY = "secret";
 
@@ -36,6 +40,11 @@ export class Knowledgebase {
     remoteAddress?: string
     remoteApiKey?: Secret
     remoteProtocol?: string
+
+    private awsAccessKeyId?: Secret
+    private awsSecretAccessKey?: Secret
+    private awsSessionToken?: Secret
+    private awsRegion?: string
 
     constructor(
         /** Optional remote Typesense address
@@ -75,6 +84,32 @@ export class Knowledgebase {
         this.remoteAddress = address;
         this.remoteApiKey = apiKey;
         this.remoteProtocol = protocol;
+        return this;
+    }
+
+    /**
+     * Stores AWS credentials on the Knowledgebase
+     * instance so they can be reused by
+     * bedrockIngest without passing them every time.
+     */
+    @func()
+    withAwsCredentials(
+        /** AWS access key ID */
+        accessKeyId: Secret,
+        /** AWS secret access key */
+        secretAccessKey: Secret,
+        /** AWS region (e.g. "us-east-1") */
+        region: string,
+        /**
+         * AWS session token (required for SSO /
+         * assumed-role credentials).
+         */
+        sessionToken?: Secret,
+    ): Knowledgebase {
+        this.awsAccessKeyId = accessKeyId;
+        this.awsSecretAccessKey = secretAccessKey;
+        this.awsRegion = region;
+        this.awsSessionToken = sessionToken;
         return this;
     }
 
@@ -482,6 +517,113 @@ export class Knowledgebase {
      * will query the knowledge base, synthesise the results and
      * reply in a conversational format.
      */
+    /**
+     * Ingests a document into an AWS Bedrock
+     * Knowledge Base using the
+     * IngestKnowledgeBaseDocuments API.
+     *
+     * The document content is sent inline as text
+     * to a **custom** data source. A unique document
+     * ID is derived from the file name via SHA-256.
+     *
+     * Returns the raw JSON response from the API.
+     */
+    @func()
+    async bedrockIngest(
+        /** The text file to ingest */
+        document: File,
+        /** Bedrock Knowledge Base ID */
+        knowledgeBaseId: string,
+        /** Data source ID connected to the KB */
+        dataSourceId: string,
+        /**
+         * Optional custom document identifier.
+         * When omitted a SHA-256 of the file name
+         * is used.
+         */
+        documentId?: string,
+    ): Promise<string> {
+        if (!this.awsAccessKeyId
+            || !this.awsSecretAccessKey
+            || !this.awsRegion) {
+            throw new Error(
+                "AWS credentials not set. "
+                + "Call withAwsCredentials() first.",
+            );
+        }
+
+        const content = await document.contents();
+        const name = await document.name();
+
+        const id = documentId
+            ?? createHash("sha256")
+                .update(name)
+                .digest("hex");
+
+        const credentials: Record<string, string> = {
+            accessKeyId:
+                await this.awsAccessKeyId.plaintext(),
+            secretAccessKey:
+                await this.awsSecretAccessKey
+                    .plaintext(),
+        };
+        if (this.awsSessionToken) {
+            credentials.sessionToken =
+                await this.awsSessionToken.plaintext();
+        }
+
+        const client = new BedrockAgentClient({
+            region: this.awsRegion,
+            credentials: credentials as any,
+        });
+
+        const command =
+            new IngestKnowledgeBaseDocumentsCommand({
+                knowledgeBaseId,
+                dataSourceId,
+                documents: [
+                    {
+                        content: {
+                            dataSourceType: "CUSTOM",
+                            custom: {
+                                customDocumentIdentifier:
+                                    { id },
+                                sourceType: "IN_LINE",
+                                inlineContent: {
+                                    type: "TEXT",
+                                    textContent: {
+                                        data: content,
+                                    },
+                                },
+                            },
+                        },
+                        metadata: {
+                            type: "IN_LINE_ATTRIBUTE",
+                            inlineAttributes: [
+                                {
+                                    key: "source",
+                                    value: {
+                                        type: "STRING",
+                                        stringValue:
+                                            name,
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                ],
+            });
+
+        const response =
+            await client.send(command);
+
+        return JSON.stringify(
+            response.documentDetails,
+            null,
+            2,
+        );
+    }
+
     @func()
     async curator(
         /**
@@ -509,6 +651,8 @@ export class Knowledgebase {
                 "index",
                 "indexFile",
                 "documents",
+                "bedrockIngest",
+                "withAwsCredentials",
             ))
             .withSystemPrompt(
                 await dag.currentModule().source()
