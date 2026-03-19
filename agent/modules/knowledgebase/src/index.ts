@@ -28,6 +28,63 @@ import {
 const typeSenseVersion = "30.1";
 const TYPESENSE_DEFAULT_API_KEY = "secret";
 
+export interface DocumentMetadata {
+    title: string;
+    tags: string[];
+    category: string;
+    subcategory: string;
+}
+
+/**
+ * Parses a markdown string and extracts
+ * document-level metadata (title, tags,
+ * category, subcategory) via LLM agents.
+ *
+ * Reused by both indexFile and bedrockIngest.
+ */
+export async function extractDocumentMetadata(
+    contents: string,
+    fallbackTitle?: string,
+): Promise<{
+    parsed: ReturnType<typeof parseMarkdown>;
+    metadata: DocumentMetadata;
+}> {
+    const parsed = parseMarkdown(contents);
+    const tags = await defineTags(parsed);
+    const category = await defineCategory(parsed);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const h1Node = parsed.ast.children?.find(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (n: any) => n.type === "heading"
+            && n.depth === 1,
+    );
+    const h1Title = h1Node?.children
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ?.filter((c: any) =>
+            c.type === "text"
+            || c.type === "inlineCode")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((c: any) => c.value)
+        .join("");
+
+    const title = h1Title
+        || parsed.frontMatter.title
+        || fallbackTitle
+        || "";
+
+    return {
+        parsed,
+        metadata: {
+            title,
+            tags,
+            category: category.category,
+            subcategory:
+                category.subCategory || "",
+        },
+    };
+}
+
 /**
  * Represents a Knowledgebase system that manages a Typesense service for data indexing and retrieval.
  * Provides methods for creating the service container, managing cached data volumes, performing health checks,
@@ -324,37 +381,26 @@ export class Knowledgebase {
         const client = await this.client();
         const path = await md.name();
         const contents = await md.contents();
-        let parsed;
+
+        let result;
         try {
-            parsed = parseMarkdown(contents);
+            result =
+                await extractDocumentMetadata(
+                    contents, path,
+                );
         } catch (e) {
-            console.error("Failed to parse markdown:", e);
+            console.error(
+                "Failed to parse markdown:", e,
+            );
             return this;
         }
-        const tags = await defineTags(parsed);
-        const category = await defineCategory(parsed);
-        const chunks = chunkMarkdown(parsed);
 
+        const { parsed, metadata } = result;
+        const chunks = chunkMarkdown(parsed);
         const docPath = documentPath ?? path;
 
-        // Top-level heading (#) of the Markdown document
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const h1Node = parsed.ast.children?.find(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (n: any) => n.type === "heading"
-                && n.depth === 1,
-        );
-        const h1Title = h1Node?.children
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ?.filter((c: any) =>
-                c.type === "text"
-                || c.type === "inlineCode")
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .map((c: any) => c.value)
-            .join("");
-
-        // Importance score derived from documentation tree
-        // depth and section heading level.
+        // Importance score derived from documentation
+        // tree depth and section heading level.
         // Lower values = higher priority.
         const pathDepth = docPath
             .split("/").filter(Boolean).length - 1;
@@ -384,14 +430,13 @@ export class Knowledgebase {
                 .upsert({
                     id,
                     chunk_index: chunk.chunkIndex,
-                    title: h1Title
-                        || parsed.frontMatter.title
-                        || path,
+                    title: metadata.title || path,
                     section_heading: heading ?? "",
                     content: chunk.content,
-                    category: category.category,
-                    subcategory: category.subCategory,
-                    tags,
+                    category: metadata.category,
+                    subcategory:
+                        metadata.subcategory,
+                    tags: metadata.tags,
                     slug,
                     weight:
                         parsed.frontMatter.weight
@@ -573,6 +618,11 @@ export class Knowledgebase {
         const content = await document.contents();
         const name = await document.name();
 
+        const { metadata } =
+            await extractDocumentMetadata(
+                content, name,
+            );
+
         const id = documentId
             ?? createHash("sha256")
                 .update(name)
@@ -624,6 +674,42 @@ export class Knowledgebase {
                                         type: "STRING",
                                         stringValue:
                                             name,
+                                    },
+                                },
+                                {
+                                    key: "title",
+                                    value: {
+                                        type: "STRING",
+                                        stringValue:
+                                            metadata
+                                                .title,
+                                    },
+                                },
+                                {
+                                    key: "category",
+                                    value: {
+                                        type: "STRING",
+                                        stringValue:
+                                            metadata
+                                                .category,
+                                    },
+                                },
+                                {
+                                    key: "subcategory",
+                                    value: {
+                                        type: "STRING",
+                                        stringValue:
+                                            metadata
+                                                .subcategory,
+                                    },
+                                },
+                                {
+                                    key: "tags",
+                                    value: {
+                                        type: "STRING_LIST",
+                                        stringListValue:
+                                            metadata
+                                                .tags,
                                     },
                                 },
                             ],
