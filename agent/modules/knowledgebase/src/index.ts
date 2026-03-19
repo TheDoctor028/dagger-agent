@@ -22,9 +22,8 @@ import {
     slugify,
 } from "./utils";
 import {
-    BedrockAgentClient,
-    IngestKnowledgeBaseDocumentsCommand,
-} from "@aws-sdk/client-bedrock-agent";
+    bedrockIngest as bedrockIngestImpl,
+} from "./bedrock";
 const typeSenseVersion = "30.1";
 const TYPESENSE_DEFAULT_API_KEY = "secret";
 
@@ -43,12 +42,13 @@ export interface DocumentMetadata {
  * Reused by both indexFile and bedrockIngest.
  */
 export async function extractDocumentMetadata(
-    contents: string,
-    fallbackTitle?: string,
+    file: File,
 ): Promise<{
     parsed: ReturnType<typeof parseMarkdown>;
     metadata: DocumentMetadata;
 }> {
+    const contents = await file.contents();
+    const documentName = await file.name();
     const parsed = parseMarkdown(contents);
     const tags = await defineTags(parsed);
     const category = await defineCategory(parsed);
@@ -70,8 +70,7 @@ export async function extractDocumentMetadata(
 
     const title = h1Title
         || parsed.frontMatter.title
-        || fallbackTitle
-        || "";
+        || documentName;
 
     return {
         parsed,
@@ -385,9 +384,7 @@ export class Knowledgebase {
         let result;
         try {
             result =
-                await extractDocumentMetadata(
-                    contents, path,
-                );
+                await extractDocumentMetadata(md);
         } catch (e) {
             console.error(
                 "Failed to parse markdown:", e,
@@ -585,9 +582,9 @@ export class Knowledgebase {
      * Knowledge Base using the
      * IngestKnowledgeBaseDocuments API.
      *
-     * The document content is sent inline as text
-     * to a **custom** data source. A unique document
-     * ID is derived from the file name via SHA-256.
+     * Extracts metadata (title, tags, category,
+     * subcategory) and sends them as inline
+     * attributes alongside the content.
      *
      * Returns the raw JSON response from the API.
      */
@@ -615,116 +612,18 @@ export class Knowledgebase {
             );
         }
 
-        const content = await document.contents();
-        const name = await document.name();
-
-        const { metadata } =
-            await extractDocumentMetadata(
-                content, name,
-            );
-
-        const id = documentId
-            ?? createHash("sha256")
-                .update(name)
-                .digest("hex");
-
-        const credentials: Record<string, string> = {
-            accessKeyId:
-                await this.awsAccessKeyId.plaintext(),
-            secretAccessKey:
-                await this.awsSecretAccessKey
-                    .plaintext(),
-        };
-        if (this.awsSessionToken) {
-            credentials.sessionToken =
-                await this.awsSessionToken.plaintext();
-        }
-
-        const client = new BedrockAgentClient({
-            region: this.awsRegion,
-            credentials: credentials as any,
-        });
-
-        const command =
-            new IngestKnowledgeBaseDocumentsCommand({
-                knowledgeBaseId,
-                dataSourceId,
-                documents: [
-                    {
-                        content: {
-                            dataSourceType: "CUSTOM",
-                            custom: {
-                                customDocumentIdentifier:
-                                    { id },
-                                sourceType: "IN_LINE",
-                                inlineContent: {
-                                    type: "TEXT",
-                                    textContent: {
-                                        data: content,
-                                    },
-                                },
-                            },
-                        },
-                        metadata: {
-                            type: "IN_LINE_ATTRIBUTE",
-                            inlineAttributes: [
-                                {
-                                    key: "source",
-                                    value: {
-                                        type: "STRING",
-                                        stringValue:
-                                            name,
-                                    },
-                                },
-                                {
-                                    key: "title",
-                                    value: {
-                                        type: "STRING",
-                                        stringValue:
-                                            metadata
-                                                .title,
-                                    },
-                                },
-                                {
-                                    key: "category",
-                                    value: {
-                                        type: "STRING",
-                                        stringValue:
-                                            metadata
-                                                .category,
-                                    },
-                                },
-                                {
-                                    key: "subcategory",
-                                    value: {
-                                        type: "STRING",
-                                        stringValue:
-                                            metadata
-                                                .subcategory,
-                                    },
-                                },
-                                {
-                                    key: "tags",
-                                    value: {
-                                        type: "STRING_LIST",
-                                        stringListValue:
-                                            metadata
-                                                .tags,
-                                    },
-                                },
-                            ],
-                        },
-                    },
-                ],
-            });
-
-        const response =
-            await client.send(command);
-
-        return JSON.stringify(
-            response.documentDetails,
-            null,
-            2,
+        return bedrockIngestImpl(
+            {
+                accessKeyId: this.awsAccessKeyId,
+                secretAccessKey:
+                    this.awsSecretAccessKey,
+                region: this.awsRegion,
+                sessionToken: this.awsSessionToken,
+            },
+            document,
+            knowledgeBaseId,
+            dataSourceId,
+            documentId,
         );
     }
 
