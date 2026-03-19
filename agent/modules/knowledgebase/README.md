@@ -22,6 +22,8 @@ for indexing and searching markdown documentation using [Typesense](https://type
   the document source
 - **Curator agent** — an interactive LLM chat agent that can search the knowledge base on
   your behalf and provide summarised answers with source citations
+- **AWS Bedrock ingestion** — ingest documents into an AWS Bedrock Knowledge Base with
+  auto-extracted metadata (title, tags, category, subcategory) sent as inline attributes
 
 ## Functions
 
@@ -42,6 +44,16 @@ upserts every file into the knowledge base.
 
 ```shell path=null start=null
 dagger call index --dir /path/to/docs
+```
+
+### `filesToIndex`
+
+Returns all markdown files from a directory that should be indexed.
+Respects `.gitignore` when a `.git` directory is present.
+The returned `File[]` can be piped into `bedrock-ingest` or other consumers.
+
+```shell path=null start=null
+dagger call files-to-index --dir /path/to/docs
 ```
 
 ### `indexFile`
@@ -69,6 +81,38 @@ dagger call search --query "pod communication" --semantic=true --limit 10
 - `query` — natural language or keyword query
 - `limit` (default: `5`) — max number of results
 - `semantic` (default: `false`) — use vector search instead of keyword search
+
+### `withAwsCredentials`
+
+Stores AWS credentials on the instance for use by `bedrock-ingest`.
+
+```shell path=null start=null
+dagger call \
+  with-aws-credentials \
+    --access-key-id env://AWS_ACCESS_KEY_ID \
+    --secret-access-key env://AWS_SECRET_ACCESS_KEY \
+    --session-token env://AWS_SESSION_TOKEN \
+    --region "eu-west-1" \
+  bedrock-ingest \
+    --document ./README.md \
+    --knowledge-base-id "EVC8YVP3EK" \
+    --data-source-id "7VI7NMHOOM"
+```
+
+### `bedrockIngest`
+
+Ingests a document into an AWS Bedrock Knowledge Base. Extracts metadata
+(title, tags, category, subcategory) from the file and sends them as
+inline attributes alongside the content.
+
+Requires `with-aws-credentials` to be called first.
+
+**Parameters:**
+
+- `document` — the text file to ingest
+- `knowledgeBaseId` — Bedrock Knowledge Base ID
+- `dataSourceId` — data source ID connected to the KB
+- `documentId` (optional) — custom document identifier; defaults to SHA-256 of the file name
 
 ### `curator`
 
@@ -124,6 +168,19 @@ Determines the best category and subcategory for a single markdown file via an L
 dagger call extract-category --md ./docs/guide.md
 ```
 
+### `withRemote`
+
+Configures the knowledgebase to use a remote Typesense instance instead of
+the local Dagger-managed service.
+
+```shell path=null start=null
+dagger call \
+  with-remote \
+    --address "ts.example.com:8108" \
+    --api-key env://TYPESENSE_API_KEY \
+  search --query "kubernetes"
+```
+
 ### `snapshot`
 
 Forces a Raft snapshot so data survives container restarts between Dagger runs.
@@ -135,6 +192,7 @@ dagger call snapshot
 ## Architecture
 
 - **Runtime:** TypeScript (Dagger SDK)
-- **Search engine:** Typesense `27.1` with built-in `ts/e5-small` embeddings for vector search
+- **Search engine:** Typesense `30.1` with built-in `ts/e5-small` embeddings for vector search
 - **Markdown parsing:** `remark` + `gray-matter` for frontmatter extraction and AST-based chunking
 - **LLM integration:** Dagger's built-in LLM support (`dag.llm()`) for tag/category extraction and the curator agent
+- **AWS Bedrock:** `@aws-sdk/client-bedrock-agent` for inline document ingestion with metadata
