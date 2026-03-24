@@ -24,9 +24,6 @@ type Agent struct {
 
 	// Base the LLM agent that handles the job.
 	Base *dagger.LLM
-
-	// Project
-	Project *dagger.Project
 }
 
 func New(
