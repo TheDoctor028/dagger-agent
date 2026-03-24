@@ -3,115 +3,113 @@ package main
 import (
 	"context"
 	"dagger/project/internal/dagger"
-	"fmt"
-	"math/rand"
+	"strings"
 )
+
+// ProjectStatus represents the lifecycle state of a project.
+type ProjectStatus string
 
 const (
-	cacheKey  = "global-projects-registry"
-	mountPath = "/projects"
+	// ProjectStatusPlanning is the initial state when the project is being defined.
+	ProjectStatusPlanning ProjectStatus = "planning"
+	// ProjectStatusInProgress means the project is actively being worked on.
+	ProjectStatusInProgress ProjectStatus = "in-progress"
+	// ProjectStatusReviewRequired means the work is done and awaiting review.
+	ProjectStatusReviewRequired ProjectStatus = "review-required"
+	// ProjectStatusDone means the project has been completed and reviewed.
+	ProjectStatusDone ProjectStatus = "done"
 )
 
-// Project manages a global registry of projects stored on the Dagger engine cache.
-// Each project is a named directory containing a context.md file.
-type Project struct{}
+// Project is an entity that holds workspaces and an ordered list of tasks
+// needed to achieve the project's goal as described by its description.
+type Project struct {
+	// Description defines the goal and purpose of this project.
+	Description string
 
-// New creates a new Project registry instance
-func New() *Project {
-	return &Project{}
+	// Status is the current lifecycle state of the project.
+	Status ProjectStatus
+
+	// UniqueID is used for isolated cache storage.
+	// Derived from the description if not provided.
+	// +optional
+	UniqueID string
+
+	Workspaces []string
+
+	Tasks [][]string
 }
 
-func (p *Project) cache() *dagger.CacheVolume {
-	return dag.CacheVolume(cacheKey)
+// New creates a new Project with the given description.
+// The project starts in the Planning state.
+func New(
+	// The project's goal or description — defines what this project is trying to achieve.
+	description string,
+	// Optional unique ID for this project's isolated storage.
+	// If not provided, it will be derived from the description.
+	// +optional
+	uniqueID string,
+) *Project {
+	if uniqueID == "" {
+		slug := strings.Map(func(r rune) rune {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+				return r
+			}
+			if r >= 'A' && r <= 'Z' {
+				return r + 32
+			}
+			return '-'
+		}, description)
+		slug = strings.Trim(slug, "-")
+		if len(slug) > 40 {
+			slug = slug[:40]
+		}
+		uniqueID = slug
+	}
+	return &Project{
+		Description: description,
+		Status:      ProjectStatusPlanning,
+		UniqueID:    uniqueID,
+	}
 }
 
-func (p *Project) base() *dagger.Container {
-	return dag.Container().
-		From("alpine:3.16").
-		WithMountedCache(mountPath, p.cache()).
-		WithWorkdir(mountPath)
+// SetStatus updates the lifecycle state of the project.
+// Valid values: "planning", "in-progress", "review-required", "done".
+func (p *Project) SetStatus(
+	// The new project status.
+	status ProjectStatus,
+) *Project {
+	p.Status = status
+	return p
 }
 
-// Add adds or updates a project with the given name and markdown context content
-func (p *Project) Add(
-	ctx context.Context,
-	// name is the unique project name (used as directory name)
-	name string,
-	// content is the markdown content for the project's context.md file
-	content string,
-) (string, error) {
-	contextFile := dag.File("context.md", content)
+func (p *Project) WithWorkspace(name string, dir *dagger.Directory) *Project {
+	return p
+}
 
-	_, err := p.base().
-		WithMountedFile("/tmp/context.md", contextFile).
-		WithExec([]string{
-			"sh", "-c",
-			"mkdir -p /projects/" + name + " && cp /tmp/context.md /projects/" + name + "/context.md",
-		}).
-		Sync(ctx)
+func src() *dagger.Directory {
+	return dag.CurrentModule().Source()
+}
+
+func manager(ctx context.Context) *dagger.LLM {
+	env := dag.Env().
+		WithCurrentModule().
+		WithStringInput("project-description", "", "").
+		WithStringInput("workspaces", "", "")
+
+	sysPrompt, err := dag.CurrentModule().Source().File("prompts/project-manager.md").Contents(ctx)
 	if err != nil {
-		return "", err
+		panic(err)
 	}
 
-	return "Project '" + name + "' added.", nil
+	return dag.LLM().
+		WithEnv(env).
+		WithBlockedFunction("Project", "WithWorkspace").
+		WithSystemPrompt(sysPrompt)
 }
 
-// List returns all active project names stored in the registry (excludes soft-deleted)
-func (p *Project) List(ctx context.Context) (string, error) {
-	return p.base().
-		WithEnvVariable("CACHE_RAND", string(rune(rand.Int()))).
-		WithExec([]string{
-			"sh", "-c",
-			`result=$(ls -1 /projects 2>/dev/null | grep -v '\.deleted$'); ` +
-				`[ -z "$result" ] && echo "No projects found." || echo "$result"`,
-		}).
-		Stdout(ctx)
-}
+func Kickoff(ctx context.Context) string {
+	manager(ctx).
+		WithPromptFile(src().File("prompts/kickoff.md"))
 
-// Context returns the context.md content for the given project
-func (p *Project) Context(
-	ctx context.Context,
-	// name is the project name
-	name string,
-) (string, error) {
-	return p.base().
-		WithExec([]string{"cat", "/projects/" + name + "/context.md"}).
-		Stdout(ctx)
-}
-
-// Delete soft-deletes a project by renaming its directory to <name>.deleted.
-//
-// To confirm, pass the project name again via --confirm.
-// This is a soft delete only — the data is kept under <name>.deleted.
-// To permanently remove it, use the interactive mode: dagger call interactive
-func (p *Project) Delete(
-	ctx context.Context,
-	// name is the project to soft-delete
-	name string,
-	// confirm must match name exactly to proceed (guard against accidental deletion)
-	confirm string,
-) (string, error) {
-	if confirm != name {
-		return "", fmt.Errorf(
-			"confirmation mismatch: expected %q, got %q — pass --confirm %s to proceed",
-			name, confirm, name,
-		)
-	}
-
-	_, err := p.base().
-		WithExec([]string{
-			"sh", "-c",
-			"mv /projects/" + name + " /projects/" + name + ".deleted",
-		}).Stdout(ctx)
-	if err != nil {
-		return "", fmt.Errorf("could not soft-delete project %q: %w", name, err)
-	}
-
-	return "Project '" + name + "' soft-deleted (renamed to '" + name + ".deleted').\n" +
-		"To permanently delete it, run: dagger call interactive", nil
-}
-
-// Interactive opens an interactive terminal with the global projects cache mounted at /projects
-func (p *Project) Interactive() *dagger.Container {
-	return p.base().Terminal()
+	return ""
 }
