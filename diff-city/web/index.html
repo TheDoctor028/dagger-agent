@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diff City</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+        
+        // Check for theme preference or default to dark
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage))) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+    </script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/diff2html/bundles/css/diff2html.min.css" />
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/diff2html/bundles/js/diff2html-ui.min.js"></script>
+    <style>
+        .d2h-file-wrapper { margin-bottom: 2rem; }
+        .comment-inline {
+            background-color: #fef9c3;
+            border-left: 4px solid #eab308;
+            padding: 0.5rem;
+            margin: 0.25rem 0;
+            font-family: sans-serif;
+            font-size: 0.875rem;
+            color: #854d0e;
+        }
+        .dark .comment-inline {
+            background-color: #422006;
+            border-left: 4px solid #f59e0b;
+            color: #fef3c7;
+        }
+        .add-comment-btn {
+            display: none;
+            cursor: pointer;
+            background: #2563eb;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            font-size: 14px;
+            font-weight: bold;
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            align-items: center;
+            justify-content: center;
+        }
+        tr:hover .add-comment-btn {
+            display: flex;
+        }
+        .d2h-code-linenumber {
+            position: relative !important;
+            overflow: visible !important;
+        }
+        tr:hover .d2h-code-linenumber {
+            background-color: #dbeafe !important;
+            color: #1e40af !important;
+        }
+        .dark tr:hover .d2h-code-linenumber {
+            background-color: #1e3a8a !important;
+            color: #bfdbfe !important;
+        }
+        
+        /* Diff2Html Dark Mode Overrides */
+        .dark .d2h-wrapper { background-color: #111827; color: #e5e7eb; }
+        .dark .d2h-file-wrapper { border: 1px solid #374151; background-color: #1f2937; }
+        .dark .d2h-file-header { background-color: #374151; border-bottom: 1px solid #4b5563; color: #f3f4f6; }
+        .dark .d2h-file-name-wrapper { color: #f3f4f6; }
+        .dark .d2h-code-line-ctn { color: #e5e7eb; }
+        .dark .d2h-code-linenumber { background-color: #1f2937; color: #6b7280; border: none; }
+        .dark .d2h-del { background-color: #450a0a; }
+        .dark .d2h-ins { background-color: #064e3b; }
+        .dark .d2h-code-line-prefix { color: #9ca3af; }
+        .dark .d2h-info { background-color: #1e293b; color: #94a3b8; border: none; }
+        .dark .d2h-code-side-linenumber { background-color: #1f2937; color: #6b7280; border: none; }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 h-screen flex flex-col transition-colors duration-200">
+
+    <!-- Header -->
+    <header class="bg-white dark:bg-gray-800 shadow-sm p-4 flex justify-between items-center transition-colors duration-200">
+        <h1 class="text-xl font-bold text-gray-800 dark:text-white">Diff City</h1>
+        <div class="flex items-center gap-4">
+            <button id="theme-toggle" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400 focus:outline-none">
+                <svg id="theme-toggle-dark-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+                <svg id="theme-toggle-light-icon" class="hidden w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" fill-rule="evenodd" clip-rule="evenodd"></path></svg>
+            </button>
+            <button id="new-workspace-btn" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">New Workspace</button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        <!-- Sidebar -->
+        <aside class="w-64 bg-white dark:bg-gray-800 border-r dark:border-gray-700 overflow-y-auto transition-colors duration-200">
+            <div class="p-4 border-b dark:border-gray-700 font-semibold text-gray-600 dark:text-gray-400 uppercase text-xs">Workspaces</div>
+            <ul id="workspace-list" class="divide-y dark:divide-gray-700"></ul>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto p-6 bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+            <div id="welcome-screen" class="h-full flex flex-col items-center justify-center text-gray-500 dark:text-gray-400">
+                <p class="text-lg">Select a workspace to start reviewing</p>
+            </div>
+
+            <div id="workspace-view" class="hidden">
+                <div class="mb-6 flex justify-between items-start">
+                    <div>
+                        <h2 id="view-name" class="text-2xl font-bold text-gray-800 dark:text-white"></h2>
+                        <p id="view-repo" class="text-sm text-gray-500 dark:text-gray-400"></p>
+                        <p id="view-refs" class="text-sm font-mono bg-gray-200 dark:bg-gray-700 dark:text-gray-300 px-2 py-1 rounded inline-block mt-2"></p>
+                    </div>
+                    <div class="flex flex-col items-end gap-2">
+                        <div id="view-status" class="px-3 py-1 rounded-full text-sm font-semibold uppercase"></div>
+                        <div class="flex gap-2">
+                            <button onclick="updateStatus('ACCEPTED')" class="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-3 py-1 rounded hover:bg-green-200 dark:hover:bg-green-900/50 text-sm">Accept</button>
+                            <button onclick="showDeclineModal()" class="bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 px-3 py-1 rounded hover:bg-red-200 dark:hover:bg-red-900/50 text-sm">Decline</button>
+                            <button onclick="updateStatus('REQUIRE_CHANGES')" class="bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 px-3 py-1 rounded hover:bg-yellow-200 dark:hover:bg-yellow-900/50 text-sm">Changes</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="diff-container" class="relative"></div>
+
+                <div class="mt-8 border-t dark:border-gray-700 pt-6">
+                    <h3 class="text-lg font-bold mb-4 dark:text-white">General Comments</h3>
+                    <div id="comments-list" class="space-y-4 mb-6"></div>
+                    <div class="bg-white dark:bg-gray-800 p-4 rounded shadow-sm border dark:border-gray-700">
+                        <h4 class="font-semibold mb-2 text-sm dark:text-gray-200">Add General Comment</h4>
+                        <textarea id="comment-text" class="w-full border dark:border-gray-600 rounded p-2 text-sm dark:bg-gray-700 dark:text-white" rows="3" placeholder="Write your feedback..."></textarea>
+                        <button onclick="addComment()" class="mt-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">Post Comment</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="workspace-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[200]">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+            <h2 class="text-xl font-bold mb-4 dark:text-white">Create New Workspace</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+                    <input type="text" id="ws-name" class="mt-1 block w-full border dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" placeholder="My Feature Review">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Repo Path</label>
+                    <input type="text" id="ws-repo" class="mt-1 block w-full border dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" placeholder="/absolute/path/to/repo">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Base (Branch/Commit)</label>
+                        <input type="text" id="ws-base" class="mt-1 block w-full border dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" placeholder="main">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Head (Branch/Commit)</label>
+                        <input type="text" id="ws-head" class="mt-1 block w-full border dark:border-gray-600 rounded p-2 dark:bg-gray-700 dark:text-white" placeholder="feature-branch">
+                    </div>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button onclick="closeModal('workspace-modal')" class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Cancel</button>
+                <button onclick="createWorkspace()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="comment-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[200]">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+            <h2 class="text-xl font-bold mb-2 dark:text-white">Add Line Comment</h2>
+            <p id="comment-meta" class="text-xs text-gray-500 dark:text-gray-400 mb-4 font-mono bg-gray-100 dark:bg-gray-700 p-2 rounded"></p>
+            <textarea id="line-comment-text" class="w-full border dark:border-gray-600 rounded p-2 text-sm dark:bg-gray-700 dark:text-white" rows="3" placeholder="Write your feedback..."></textarea>
+            <div class="mt-6 flex justify-end gap-3">
+                <button onclick="closeModal('comment-modal')" class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Cancel</button>
+                <button id="submit-line-comment" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">Add Comment</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="decline-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[200]">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+            <h2 class="text-xl font-bold mb-4 dark:text-white">Decline Review</h2>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Please provide a reason for declining this diff.</p>
+            <textarea id="decline-reason" class="w-full border dark:border-gray-600 rounded p-2 text-sm dark:bg-gray-700 dark:text-white" rows="3"></textarea>
+            <div class="mt-6 flex justify-end gap-3">
+                <button onclick="closeModal('decline-modal')" class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Cancel</button>
+                <button onclick="confirmDecline()" class="bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700">Decline</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentWorkspaceId = null;
+        let currentReviewData = null;
+
+        // Theme toggle logic
+        const themeToggleDarkIcon = document.getElementById('theme-toggle-dark-icon');
+        const themeToggleLightIcon = document.getElementById('theme-toggle-light-icon');
+
+        // Change the icons inside the button based on previous settings
+        if (localStorage.getItem('color-theme') === 'dark' || (!('color-theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            themeToggleLightIcon.classList.remove('hidden');
+        } else {
+            themeToggleDarkIcon.classList.remove('hidden');
+        }
+
+        const themeToggleBtn = document.getElementById('theme-toggle');
+
+        themeToggleBtn.addEventListener('click', function() {
+            // toggle icons inside button
+            themeToggleDarkIcon.classList.toggle('hidden');
+            themeToggleLightIcon.classList.toggle('hidden');
+
+            // if set via local storage previously
+            if (localStorage.getItem('color-theme')) {
+                if (localStorage.getItem('color-theme') === 'light') {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('color-theme', 'dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('color-theme', 'light');
+                }
+
+            // if NOT set via local storage previously
+            } else {
+                if (document.documentElement.classList.contains('dark')) {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('color-theme', 'light');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('color-theme', 'dark');
+                }
+            }
+            
+            // Re-render diff if a workspace is loaded to update diff2html theme
+            if (currentWorkspaceId) {
+                renderDiff(currentWorkspaceId, currentReviewData.comments);
+            }
+        });
+
+        async function fetchWorkspaces() {
+            const res = await fetch('/api/workspaces');
+            const data = await res.json();
+            const list = document.getElementById('workspace-list');
+            list.innerHTML = '';
+            data.forEach(ws => {
+                const li = document.createElement('li');
+                li.className = `p-4 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer flex justify-between items-center group ${currentWorkspaceId === ws.metadata.id ? 'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500' : ''}`;
+                li.onclick = () => loadWorkspace(ws.metadata.id);
+                
+                const statusClass = getStatusClass(ws.state.status);
+                
+                li.innerHTML = `
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2">
+                            <div class="font-medium text-gray-800 dark:text-gray-200 truncate">${ws.metadata.name}</div>
+                            <div class="px-1.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${statusClass}">${ws.state.status.replace('_', ' ')}</div>
+                        </div>
+                        <div class="text-xs text-gray-500 dark:text-gray-400 truncate">${ws.metadata.repo_path}</div>
+                    </div>
+                    <button onclick="deleteWorkspace(event, '${ws.metadata.id}')" class="hidden group-hover:block p-1 text-gray-400 hover:text-red-500 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        async function deleteWorkspace(event, id) {
+            event.stopPropagation();
+            if (!confirm('Are you sure you want to delete this workspace?')) return;
+            
+            const res = await fetch(`/api/workspaces/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                if (currentWorkspaceId === id) {
+                    currentWorkspaceId = null;
+                    document.getElementById('workspace-view').classList.add('hidden');
+                    document.getElementById('welcome-screen').classList.remove('hidden');
+                }
+                fetchWorkspaces();
+            }
+        }
+
+        async function loadWorkspace(id) {
+            currentWorkspaceId = id;
+            document.getElementById('welcome-screen').classList.add('hidden');
+            document.getElementById('workspace-view').classList.remove('hidden');
+            
+            const res = await fetch(`/api/workspaces/${id}`);
+            currentReviewData = await res.json();
+            const ws = currentReviewData;
+            
+            document.getElementById('view-name').innerText = ws.metadata.name;
+            document.getElementById('view-repo').innerText = ws.metadata.repo_path;
+            document.getElementById('view-refs').innerText = `${ws.metadata.base} .. ${ws.metadata.head}`;
+            
+            const statusEl = document.getElementById('view-status');
+            statusEl.innerText = ws.state.status.replace('_', ' ');
+            statusEl.className = 'px-3 py-1 rounded-full text-sm font-semibold uppercase ' + getStatusClass(ws.state.status);
+
+            renderGeneralComments(ws.comments);
+            await renderDiff(id, ws.comments);
+            fetchWorkspaces();
+        }
+
+        function getStatusClass(status) {
+            switch(status) {
+                case 'TO_REVIEW': return 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300';
+                case 'ACCEPTED': return 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300';
+                case 'REQUIRE_CHANGES': return 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300';
+                case 'DECLINED': return 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300';
+                default: return 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300';
+            }
+        }
+
+        async function renderDiff(id, comments) {
+            const container = document.getElementById('diff-container');
+            container.innerHTML = '<p class="text-gray-500 italic text-center p-8">Loading diff...</p>';
+            
+            try {
+                const res = await fetch(`/api/workspaces/${id}/diff`);
+                if (!res.ok) throw new Error(await res.text());
+                const diffString = await res.text();
+                
+                const isDark = document.documentElement.classList.contains('dark');
+                const diff2htmlUi = new Diff2HtmlUI(container, diffString, {
+                    drawFileList: true,
+                    matching: 'lines',
+                    outputFormat: 'side-by-side',
+                    colorScheme: isDark ? 'dark' : 'light',
+                });
+                diff2htmlUi.draw();
+
+                // Inject comment buttons and existing comments
+                injectLineCommenting(comments);
+            } catch (err) {
+                container.innerHTML = `<div class="bg-red-50 text-red-700 p-4 rounded border border-red-200">
+                    <strong>Error loading diff:</strong> ${err.message}
+                </div>`;
+            }
+        }
+
+        function injectLineCommenting(comments) {
+            const fileWrappers = document.querySelectorAll('.d2h-file-wrapper');
+            fileWrappers.forEach(fileWrapper => {
+
+                const fileNameEl = fileWrapper.querySelector('.d2h-file-name');
+                if (!fileNameEl) return;
+                const fileName = fileNameEl.innerText.trim();
+
+                // Process each row in the diff
+                const rows = fileWrapper.querySelectorAll('tr');
+                rows.forEach(row => {
+
+                    const lineNumbers = row.querySelectorAll('.d2h-code-side-linenumber, .d2h-code-linenumber');
+                    const codeLines = row.querySelectorAll('.d2h-code-side-line, .d2h-code-line');
+
+                    for (let index = 0; index < lineNumbers.length; index++) {
+                        const lnCell = lineNumbers[index];
+
+                        const lineNum = parseInt(lnCell.innerText.trim());
+                        if (isNaN(lineNum)) continue;
+
+                        const codeCell = codeLines[index];
+                        if (!codeCell) continue;
+
+                        // Add plus button to line number cell if not already there
+                        if (!lnCell.querySelector('.add-comment-btn')) {
+                            const btn = document.createElement('div');
+                            btn.className = 'add-comment-btn';
+                            btn.innerText = '+';
+                            btn.title = 'Add comment';
+                            btn.onclick = (e) => {
+                                e.stopPropagation();
+                                showCommentModal(fileName, lineNum);
+                            };
+                            lnCell.appendChild(btn);
+                        }
+
+                        // Add existing comments to the code cell
+                        const codeContainer = codeCell.querySelector('.d2h-code-line-ctn') || codeCell;
+                        const lineComments = (comments || []).filter(c => c.file === fileName && c.line === lineNum);
+                        
+                        // Clear existing inline comments to avoid duplicates on re-render
+                        const existingComments = codeContainer.querySelectorAll('.comment-inline');
+                        existingComments.forEach(el => el.remove());
+
+                        lineComments.forEach(c => {
+                            const commentDiv = document.createElement('div');
+                            commentDiv.className = 'comment-inline';
+                            commentDiv.innerText = c.text;
+                            codeContainer.appendChild(commentDiv);
+                        });
+                    }
+                });
+            });
+        }
+
+        function showCommentModal(file, line) {
+            document.getElementById('comment-meta').innerText = `${file}:${line}`;
+            document.getElementById('line-comment-text').value = '';
+            document.getElementById('comment-modal').classList.remove('hidden');
+            document.getElementById('submit-line-comment').onclick = () => submitLineComment(file, line);
+        }
+
+        async function submitLineComment(file, line) {
+            const text = document.getElementById('line-comment-text').value;
+            if (!text) return;
+
+            await fetch(`/api/workspaces/${currentWorkspaceId}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file, line, text })
+            });
+            closeModal('comment-modal');
+            loadWorkspace(currentWorkspaceId);
+        }
+
+        function renderGeneralComments(comments) {
+            const list = document.getElementById('comments-list');
+            list.innerHTML = '';
+            const general = comments.filter(c => !c.file);
+            if (general.length === 0) {
+                list.innerHTML = '<p class="text-gray-400 dark:text-gray-500 text-sm italic">No general comments yet.</p>';
+                return;
+            }
+            general.forEach(c => {
+                const div = document.createElement('div');
+                div.className = 'bg-white dark:bg-gray-800 p-3 rounded shadow-sm border dark:border-gray-700 text-sm';
+                div.innerHTML = `
+                    <div class="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                        <span>General</span>
+                        <span>${new Date(c.timestamp).toLocaleString()}</span>
+                    </div>
+                    <div class="text-gray-800 dark:text-gray-200">${c.text}</div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        async function createWorkspace() {
+            const name = document.getElementById('ws-name').value;
+            const repoPath = document.getElementById('ws-repo').value;
+            const base = document.getElementById('ws-base').value;
+            const head = document.getElementById('ws-head').value;
+            
+            const res = await fetch('/api/workspaces', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, repo_path: repoPath, base, head })
+            });
+            
+            if (res.ok) {
+                const ws = await res.json();
+                closeModal('workspace-modal');
+                loadWorkspace(ws.id);
+            }
+        }
+
+        async function updateStatus(status, reason = '') {
+            await fetch(`/api/workspaces/${currentWorkspaceId}/state`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status, reason })
+            });
+            loadWorkspace(currentWorkspaceId);
+        }
+
+        function showDeclineModal() {
+            document.getElementById('decline-modal').classList.remove('hidden');
+        }
+
+        function confirmDecline() {
+            const reason = document.getElementById('decline-reason').value;
+            updateStatus('DECLINED', reason);
+            closeModal('decline-modal');
+        }
+
+        async function addComment() {
+            const text = document.getElementById('comment-text').value;
+            if (!text) return;
+            
+            await fetch(`/api/workspaces/${currentWorkspaceId}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+            document.getElementById('comment-text').value = '';
+            loadWorkspace(currentWorkspaceId);
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        document.getElementById('new-workspace-btn').onclick = () => {
+            document.getElementById('workspace-modal').classList.remove('hidden');
+        };
+
+        fetchWorkspaces();
+    </script>
+</body>
+</html>

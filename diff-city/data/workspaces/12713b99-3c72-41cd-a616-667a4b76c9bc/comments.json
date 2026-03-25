@@ -1,0 +1,9 @@
+[
+  {
+    "id": "deb6d1a3-f576-4832-8916-794377e0794c",
+    "file": "test.txt",
+    "line": 1,
+    "text": "This change is wrong",
+    "timestamp": "2026-03-24T23:45:53.41371+01:00"
+  }
+]
