@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"dagger/toolbox/internal/dagger"
-	"slices"
 
 	"github.com/alecthomas/chroma/v2"
 	"github.com/alecthomas/chroma/v2/formatters"
@@ -502,103 +501,6 @@ func (toolbox *Toolbox) Task(
 		WithSystemPrompt(reminderPrompt).
 		WithPrompt(prompt).
 		LastReply(ctx)
-}
-
-/*
-TodoWrite
-Keep track of your TODO list
-
-WHEN TO USE THIS TOOL:
-  - When a task requires 3 or more distinct steps or actions
-  - To break down a complex task into smaller, manageable parts
-  - When the user directly gave a sequence of tasks to perform (numbered
-    or comma-separated)
-  - When the user gave you more tasks in the middle of a conversation
-  - When you want to see the full TODO list
-
-SKIP THIS TOOL WHEN:
-  - The task is trivial
-  - The task is purely conversational or informational
-
-HOW TO USE:
-  - Call this function with the TODOs to record in each state (pending,
-    in progress, completed)
-  - TODOs are additive; you can call it with incremental updates for
-    individual TODOs
-  - The full TODO list will be printed in response
-  - Every pending TODO must be eventually completed before your task is
-    completed
-  - To print the current TODO list, call this function with no arguments
-*/
-func (toolbox *Toolbox) TodoWrite(ctx context.Context, pending []string, inProgress []string, completed []string) (*dagger.Env, error) {
-	if pending == nil {
-		pending = []string{}
-	}
-	if inProgress == nil {
-		inProgress = []string{}
-	}
-	if completed == nil {
-		completed = []string{}
-	}
-
-	currentTodos, err := dag.CurrentEnv().Input("TODOs").AsString(ctx)
-	if err != nil {
-		currentTodos = ""
-	}
-
-	currentTodoLines := strings.Split(currentTodos, "\n")
-
-	var existingCompleted, existingInProgress, existingPending []string
-
-	for _, todo := range currentTodoLines {
-		if todo == "" {
-			continue
-		}
-
-		parts := strings.SplitN(todo, ":", 2)
-		if len(parts) != 2 {
-			parts = []string{"pending", todo}
-		}
-
-		state, description := parts[0], parts[1]
-
-		isUpdating := slices.Contains(append(append(pending, inProgress...), completed...), description)
-		if isUpdating {
-			continue
-		}
-
-		switch strings.ToLower(state) {
-		case "completed":
-			existingCompleted = append(existingCompleted, description)
-		case "in_progress":
-			existingInProgress = append(existingInProgress, description)
-		case "pending":
-			existingPending = append(existingPending, description)
-		}
-	}
-
-	completedList := append(existingCompleted, completed...)
-	inProgressList := append(existingInProgress, inProgress...)
-	pendingList := append(existingPending, pending...)
-
-	var formattedTodos, encodedTodos []string
-
-	for _, todo := range completedList {
-		encodedTodos = append(encodedTodos, fmt.Sprintf("completed:%s", todo))
-		formattedTodos = append(formattedTodos, fmt.Sprintf("■ \033[32m\033[9m%s\033[0m", todo))
-	}
-	for _, todo := range inProgressList {
-		encodedTodos = append(encodedTodos, fmt.Sprintf("in_progress:%s", todo))
-		formattedTodos = append(formattedTodos, fmt.Sprintf("□ \033[33m%s\033[0m", todo))
-	}
-	for _, todo := range pendingList {
-		encodedTodos = append(encodedTodos, fmt.Sprintf("pending:%s", todo))
-		formattedTodos = append(formattedTodos, fmt.Sprintf("□ \033[37m%s\033[0m", todo))
-	}
-
-	fmt.Println(strings.Join(formattedTodos, "\n"))
-
-	return dag.CurrentEnv().WithStringInput("TODOs", strings.Join(encodedTodos, "\n"), "Your TODO list"), nil
 }
 
 func (toolbox *Toolbox) reminderPrompt(ctx context.Context, source *dagger.Directory) (string, error) {
