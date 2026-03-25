@@ -1,0 +1,14 @@
+{
+  "name": "inspector",
+  "engineVersion": "v0.20.1",
+  "sdk": {
+    "source": "go"
+  },
+  "dependencies": [
+    {
+      "name": "toolbox",
+      "source": "github.com/TheDoctor028/dagger-agent/agent/modules/toolbox@master",
+      "pin": "940804f67d893e1a0836065f223b0365a7450825"
+    }
+  ]
+}
