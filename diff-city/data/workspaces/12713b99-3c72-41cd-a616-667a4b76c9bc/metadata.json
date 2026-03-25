@@ -1,7 +1,0 @@
-{
-  "id": "12713b99-3c72-41cd-a616-667a4b76c9bc",
-  "name": "Line Comment Test",
-  "repo_path": "/Users/kristofhetenyi/Work/MyProjects/dagger-agent/diff-city/test-repo-2",
-  "base": "HEAD~1",
-  "head": "HEAD"
-}

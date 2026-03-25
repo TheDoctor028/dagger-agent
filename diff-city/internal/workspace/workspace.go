@@ -170,7 +170,9 @@ func (m *Manager) AddComment(id string, file string, line int, text string) erro
 		return err
 	}
 	var comments []Comment
-	json.Unmarshal(data, &comments)
+	if len(data) > 0 && string(data) != "null" {
+		json.Unmarshal(data, &comments)
+	}
 
 	comment := Comment{
 		ID:        uuid.New().String(),
@@ -182,5 +184,29 @@ func (m *Manager) AddComment(id string, file string, line int, text string) erro
 	comments = append(comments, comment)
 
 	newData, _ := json.MarshalIndent(comments, "", "  ")
+	return os.WriteFile(commentsPath, newData, 0644)
+}
+
+func (m *Manager) DeleteComment(workspaceID string, commentID string) error {
+	wsDir := filepath.Join(m.DataDir, "workspaces", workspaceID)
+	commentsPath := filepath.Join(wsDir, "comments.json")
+
+	data, err := os.ReadFile(commentsPath)
+	if err != nil {
+		return err
+	}
+	var comments []Comment
+	if len(data) > 0 && string(data) != "null" {
+		json.Unmarshal(data, &comments)
+	}
+
+	updatedComments := []Comment{}
+	for _, c := range comments {
+		if c.ID != commentID {
+			updatedComments = append(updatedComments, c)
+		}
+	}
+
+	newData, _ := json.MarshalIndent(updatedComments, "", "  ")
 	return os.WriteFile(commentsPath, newData, 0644)
 }

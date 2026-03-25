@@ -41,6 +41,7 @@ func main() {
 	r.Get("/api/workspaces/{id}/diff", s.getWorkspaceDiff)
 	r.Post("/api/workspaces/{id}/state", s.updateWorkspaceState)
 	r.Post("/api/workspaces/{id}/comments", s.addComment)
+	r.Delete("/api/workspaces/{id}/comments/{commentId}", s.deleteComment)
 
 	// Serve frontend
 	workDir, _ := os.Getwd()
@@ -48,7 +49,9 @@ func main() {
 	r.Handle("/*", http.StripPrefix("/", http.FileServer(filesDir)))
 
 	log.Println("Starting server on :8080")
-	http.ListenAndServe(":8080", r)
+	if err := http.ListenAndServe(":8080", r); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +151,16 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.WorkspaceManager.AddComment(id, req.File, req.Line, req.Text); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) deleteComment(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	commentId := chi.URLParam(r, "commentId")
+	if err := s.WorkspaceManager.DeleteComment(id, commentId); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

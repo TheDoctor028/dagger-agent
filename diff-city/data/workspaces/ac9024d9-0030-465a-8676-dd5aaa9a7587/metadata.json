@@ -1,7 +1,0 @@
-{
-  "id": "ac9024d9-0030-465a-8676-dd5aaa9a7587",
-  "name": "test 2",
-  "repo_path": "/Users/kristofhetenyi/Work/Rootevidence/infra-helm",
-  "base": "main",
-  "head": "471b4bd0f53c45d29a642b34c8d435348a96cff6"
-}
