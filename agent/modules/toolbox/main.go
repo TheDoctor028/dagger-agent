@@ -35,8 +35,16 @@ func New(
 	}
 }
 
+// AsModule Return the toolbox as a module
 func (toolbox *Toolbox) AsModule() *dagger.Module {
 	return dag.CurrentModule().Source().AsModule()
+}
+
+// WithPreset
+func (toolbox Toolbox) WithPreset(preset string) dagger.WithLLMFunc {
+	return func(llm *dagger.LLM) *dagger.LLM {
+		return llm
+	}
 }
 
 /*
