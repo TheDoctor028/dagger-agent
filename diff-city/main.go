@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"diff-city/internal/config"
 	"diff-city/internal/git"
 	"diff-city/internal/workspace"
 
@@ -20,6 +21,8 @@ type Server struct {
 }
 
 func main() {
+	cfg := config.Load()
+
 	dataDir := "./data"
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		log.Fatal(err)
@@ -33,6 +36,9 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	if cfg.CORSAllowedOrigin != "" {
+		r.Use(corsMiddleware(cfg.CORSAllowedOrigin))
+	}
 
 	r.Get("/api/workspaces", s.listWorkspaces)
 	r.Post("/api/workspaces", s.createWorkspace)
@@ -43,15 +49,46 @@ func main() {
 	r.Post("/api/workspaces/{id}/comments", s.addComment)
 	r.Delete("/api/workspaces/{id}/comments/{commentId}", s.deleteComment)
 
-	// Serve frontend
+	// Serve frontend (built React SPA)
 	workDir, _ := os.Getwd()
-	filesDir := http.Dir(filepath.Join(workDir, "web"))
-	r.Handle("/*", http.StripPrefix("/", http.FileServer(filesDir)))
+	distDir := filepath.Join(workDir, "web/diff-review-hub/dist")
+	r.Handle("/*", spaHandler(distDir))
 
 	log.Println("Starting server on :8080")
 	if err := http.ListenAndServe(":8080", r); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// corsMiddleware adds CORS headers for the given allowed origin.
+func corsMiddleware(allowedOrigin string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// spaHandler serves static files from dir and falls back to index.html for
+// any path that does not correspond to a file on disk (SPA client-side routing).
+func spaHandler(dir string) http.Handler {
+	fs := http.FileServer(http.Dir(dir))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := filepath.Join(dir, filepath.Clean("/"+r.URL.Path))
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			http.ServeFile(w, r, filepath.Join(dir, "index.html"))
+			return
+		}
+		fs.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +108,16 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		Head     string `json:"head"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" || req.RepoPath == "" || req.Base == "" || req.Head == "" {
+		http.Error(w, "name, repo_path, base, and head are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.GitService.ValidateWorkspaceRefs(req.RepoPath, req.Base, req.Head); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
