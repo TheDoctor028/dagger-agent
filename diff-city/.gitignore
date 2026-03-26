@@ -1,3 +1,5 @@
 diff-city
 bin/
 data/
+
+.env

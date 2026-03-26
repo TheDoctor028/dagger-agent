@@ -4,8 +4,9 @@ Diff City is a lightweight, self-hosted code review tool that allows users to cr
 
 ## Tech Stack
 - **Backend:** Go (using `go-chi` for routing).
-- **Frontend:** Single-page HTML/JavaScript, Tailwind CSS for styling.
-- **Diff Rendering:** [Diff2Html](https://diff2html.xyz/) (UI library version).
+- **Frontend:** React SPA built with Vite, TypeScript, Tailwind CSS, shadcn/ui, and React Query.
+  Located in `web/diff-review-hub/`. Built output goes to `web/diff-review-hub/dist/`.
+- **Diff Rendering:** Custom parser in `web/diff-review-hub/src/lib/diff-parser.ts`.
 - **Storage:** Simple JSON files stored in `./data/workspaces/`.
 
 ## Core Concepts
@@ -34,33 +35,24 @@ Workspaces are stored in `./data/workspaces/{uuid}/`:
 ```
 
 ## Frontend Architecture
-The frontend is a single `index.html` that:
-1. Fetches workspace list and details via `/api/workspaces`.
-2. Fetches raw git diff via `/api/workspaces/{id}/diff`.
-3. Renders the diff using `Diff2HtmlUI`.
-4. **Post-processing:** The `injectLineCommenting` function iterates through the rendered HTML table rows to:
-   - Identify line numbers and file names.
-   - Inject "+" buttons for adding new comments.
-   - Inject existing comments directly into the diff code cells.
-
-## Critical Implementation Details
-
-### Line Comment Injection (`injectLineCommenting`)
-This is the most sensitive part of the UI. It relies on `Diff2Html`'s generated class names:
-- `.d2h-file-wrapper`: Containers for each file in the diff.
-- `.d2h-code-side-linenumber` / `.d2h-code-linenumber`: Line number cells.
-- `.d2h-code-side-line` / `.d2h-code-line`: Code content cells.
-- `.d2h-code-line-ctn`: The actual text container inside a code cell.
-
-**Recent Fixes:**
-- **Loop Logic:** Replaced `return` with `continue` inside the row processing loop. Previously, an empty line cell (common in additions/deletions) would trigger a return that killed the injection for the rest of that row.
-- **Selector Robustness:** Added support for both `side-by-side` and `unified` class names to ensure comments show up regardless of view mode.
-- **Layering (z-index):** 
-    - `add-comment-btn`: `z-index: 10`
-    - Modals (`workspace-modal`, `comment-modal`, etc.): `z-[200]`
-    - This ensures modals and their backdrops correctly cover the diff and buttons.
+The frontend is a React SPA located in `web/diff-review-hub/`.
+- **React Query** manages all server state (queries and mutations).
+- All API calls go through `web/diff-review-hub/src/lib/api.ts` using `/api` as the base URL.
+- The diff is fetched as raw text and parsed by `src/lib/diff-parser.ts` into structured `DiffFile[]` data.
+- Rendered by `src/components/DiffViewer.tsx` with inline comment support.
+- See `web/diff-review-hub/AGENTS.md` for detailed frontend architecture notes.
 
 ## Development Workflow
 1. **Backend:** Logic is split between `main.go` (HTTP handlers) and `internal/` (git/workspace logic).
-2. **Frontend:** All logic is in `<script>` tags in `web/index.html`.
-3. **Local Testing:** Requires a local git repository to point a workspace at.
+2. **Frontend source:** React app in `web/diff-review-hub/src/`. See that directory's `AGENTS.md` for
+   component-level details.
+3. **Serving static files:** `main.go` serves `web/diff-review-hub/dist/` and falls back to `index.html`
+   for all non-API routes (SPA routing support via `spaHandler`).
+4. **Local Testing (production-like):**
+   - Build the frontend: `cd web/diff-review-hub && npm run build`
+   - Run the backend: `go run main.go` → open `http://localhost:8080`
+5. **Local Development (hot reload):**
+   - Run the backend: `go run main.go`
+   - Run the frontend dev server: `cd web/diff-review-hub && npm run dev`
+   - The Vite dev server (`:5173`) proxies `/api` requests to the Go backend (`:8080`).
+6. **Local Testing:** Requires a local git repository to point a workspace at.

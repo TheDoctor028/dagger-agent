@@ -17,6 +17,7 @@ Diff City is a lightweight, self-hosted tool for reviewing local Git diffs. It's
 ### Prerequisites
 
 - [Go](https://go.dev/dl/) installed on your machine.
+- [Node.js](https://nodejs.org/) (v18+) and npm installed.
 - [Git](https://git-scm.com/) installed and available in your PATH.
 
 ### Installation
@@ -24,15 +25,38 @@ Diff City is a lightweight, self-hosted tool for reviewing local Git diffs. It's
 1. Clone or download this repository.
 2. Open your terminal in the project directory.
 
-### Running the Server
+### Build & Run
 
-Run the following command to start the server:
+**Step 1 — Build the frontend:**
+
+```bash
+cd web/diff-review-hub
+npm install
+npm run build
+cd ../..
+```
+
+**Step 2 — Start the backend:**
 
 ```bash
 go run main.go
 ```
 
-The server will start on `http://localhost:8080`.
+The server will start on `http://localhost:8080` and serve the built React app.
+
+### Development Mode (hot reload)
+
+Run the backend and frontend dev server in separate terminals:
+
+```bash
+# Terminal 1 — backend
+go run main.go
+
+# Terminal 2 — frontend (Vite dev server on :5173, proxies /api to :8080)
+cd web/diff-review-hub && npm run dev
+```
+
+Open `http://localhost:5173` for the hot-reloading dev experience.
 
 ## 📖 How to Use
 
@@ -60,5 +84,4 @@ All workspace metadata, states, and comments are stored in the `./data/workspace
 ## 🛠️ Built With
 
 - **Backend:** Go, go-chi
-- **Frontend:** HTML/JS, Tailwind CSS
-- **Library:** diff2html
+- **Frontend:** React, Vite, TypeScript, Tailwind CSS, shadcn/ui, React Query
