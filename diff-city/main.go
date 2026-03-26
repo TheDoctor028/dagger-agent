@@ -91,13 +91,18 @@ func spaHandler(dir string) http.Handler {
 	})
 }
 
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
 func (s *Server) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 	ws, err := s.WorkspaceManager.ListWorkspaces()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(ws)
+	writeJSON(w, ws)
 }
 
 func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +132,7 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(meta)
+	writeJSON(w, meta)
 }
 
 func (s *Server) getWorkspace(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +142,7 @@ func (s *Server) getWorkspace(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	json.NewEncoder(w).Encode(ws)
+	writeJSON(w, ws)
 }
 
 func (s *Server) deleteWorkspace(w http.ResponseWriter, r *http.Request) {
