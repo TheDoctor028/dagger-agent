@@ -45,31 +45,17 @@ func (w *Inspector) Inspect(
 	// +optional
 	ai bool,
 ) (string, error) {
-	entries, err := w.Src.Entries(ctx)
-	if err != nil {
-		return "", err
-	}
-
 	var result string
 
-	if !ai {
-		for _, agentFile := range agentFiles {
-			for _, entry := range entries {
-				if entry == agentFile {
-					result, err = w.Src.File(agentFile).Contents(ctx)
-					if err != nil {
-						return "", err
-					}
-					break
-				}
-			}
-			if result != "" {
-				break
-			}
+	for _, f := range agentFiles {
+		content, err := w.Src.File(f).Contents(ctx)
+		if err == nil {
+			result = content
+			break
 		}
 	}
 
-	if result == "" {
+	if result == "" || ai {
 		// No agent file found — spin up an inspector agent.
 		inspectorPrompt, err := dag.CurrentModule().Source().
 			File("prompts/inspector.md").Contents(ctx)
@@ -80,6 +66,7 @@ func (w *Inspector) Inspect(
 		env := dag.Env().
 			WithModule(dag.Toolbox().AsModule()).
 			WithWorkspace(w.Src).
+			WithStringInput("existing-description", result, "The existing AGENTS.md file's content.").
 			WithStringOutput("agents-md", "The generated AGENTS.md file's content.")
 
 		agent := dag.LLM().
