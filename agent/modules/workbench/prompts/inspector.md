@@ -65,4 +65,6 @@ should read first.>
 - Keep each section concise — aim for 3-6 bullet points or 2-4 sentences.
 - Your **final reply must contain only the AGENTS.md content** — no
   preamble, no explanation, no wrapping code-fence around the whole document.
+- Do not use emojis or other formatting in your response except the required
+  markdown syntax.
 - You must also include your response in the agents-md output,

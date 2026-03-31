@@ -19,7 +19,7 @@ var agentFiles = []string{
 	"GEMINI.md",
 }
 
-type Inspector struct {
+type Workbench struct {
 
 	// Src
 	// +private
@@ -29,8 +29,8 @@ type Inspector struct {
 func New(
 	// src
 	src *dagger.Directory,
-) *Inspector {
-	return &Inspector{
+) *Workbench {
+	return &Workbench{
 		Src: src,
 	}
 }
@@ -39,7 +39,7 @@ func New(
 // in the root of the source directory. If one is found its content is returned.
 // Otherwise an inspector agent analyses the workspace and produces an AGENTS.md document.
 // When ai is true, the AI inspection is always performed regardless of existing files.
-func (w *Inspector) Inspect(
+func (w *Workbench) Inspect(
 	ctx context.Context,
 	// Force the AI inspection even if a well-known agent file already exists.
 	// +optional
