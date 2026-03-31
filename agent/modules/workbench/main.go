@@ -24,14 +24,20 @@ type Workbench struct {
 	// Src
 	// +private
 	Src *dagger.Directory
+
+	// +optional
+	Name string
 }
 
 func New(
 	// src
 	src *dagger.Directory,
+	// +default="IHaveNoName"
+	name string,
 ) *Workbench {
 	return &Workbench{
-		Src: src,
+		Src:  src,
+		Name: name,
 	}
 }
 
@@ -93,4 +99,33 @@ func (w *Workbench) Inspect(
 	}
 
 	return result, nil
+}
+
+// Artisan the AI assistant of the workbench.
+func (w *Workbench) Artisan(ctx context.Context) *dagger.LLM {
+	sysPrompt, err := dag.CurrentModule().Source().
+		File("prompts/artisan.md").Contents(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	env := dag.Env().
+		WithStringOutput("result", "The result of the AI assistant.").
+		WithModule(dag.Toolbox().AsModule()).
+		WithWorkspace(w.Src)
+
+	agent := dag.LLM().
+		WithEnv(env).
+		WithSystemPrompt(sysPrompt)
+
+	return agent
+}
+
+// AskArtisan ask the AI assistant of the workbench.
+func (w Workbench) AskArtisan(ctx context.Context, prompt string) string {
+	res, err := w.Artisan(ctx).WithPrompt(prompt).Loop().LastReply(ctx)
+	if err != nil {
+		panic(err)
+	}
+	return res
 }
